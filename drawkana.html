@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multi-Language Handwriting Recognizer & Romanizer</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & Asian CJK Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&family=Noto+Sans+KR:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+  <!-- Font Awesome CDN -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+  <!-- Japanese Kuroshiro & Kuromoji CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/kuroshiro@1.2.0/dist/kuroshiro.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/kuroshiro-analyzer-kuromoji@1.1.0/dist/kuroshiro-analyzer-kuromoji.min.js"></script>
+
+  <!-- Chinese Pinyin-Pro CDN for full Pinyin transliteration with tone marks -->
+  <script src="https://cdn.jsdelivr.net/npm/pinyin-pro@3.19.6/dist/index.js"></script>
+
+  <style>
+    body {
+      font-family: 'Inter', 'Noto Sans JP', 'Noto Sans SC', 'Noto Sans KR', sans-serif;
+      touch-action: manipulation;
+    }
+    .canvas-container {
+      position: relative;
+      touch-action: none; /* Prevents viewport scrolling on touch devices while drawing */
+    }
+    /* Chinese/Japanese Tianzige / Quadrant guidelines */
+    .grid-guide-cjk {
+      background-image: 
+        linear-gradient(to right, rgba(203, 213, 225, 0.45) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(203, 213, 225, 0.45) 1px, transparent 1px);
+      background-size: 50% 50%;
+      background-position: center;
+    }
+    /* Cyrillic / Ruled writing line */
+    .grid-guide-ru {
+      background-image: linear-gradient(to bottom, transparent 65%, rgba(203, 213, 225, 0.6) 66%, transparent 67%);
+      background-size: 100% 100%;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      height: 6px;
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background-color: #cbd5e1;
+      border-radius: 9999px;
+    }
+    /* Subtle focus state when manually editing Box 1 without harsh browser default outlines */
+    #text-output-box:focus {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col items-center py-6 px-3 sm:px-6">
+
+  <!-- Header Section -->
+  <header class="w-full max-w-3xl text-center mb-4">
+    <div class="inline-flex items-center gap-2 bg-indigo-50 border border-indigo-200 text-indigo-700 px-3 py-1 rounded-full text-xs font-semibold tracking-wide uppercase mb-2">
+      <i class="fa-solid fa-pen-fancy"></i>
+      Universal Handwriting & Romanizer
+    </div>
+    <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Handwriting Recognizer & Transliteration</h1>
+    <p class="text-xs sm:text-sm text-slate-500 mt-1 max-w-xl mx-auto">
+      Draw characters with mouse or touch. Candidates are recognized via Google Input Tools and transliterated into Latin/Romaji in real time.
+    </p>
+
+    <!-- Language Navigation Tabs (Japanese selected first by default) -->
+    <div class="mt-4 flex items-center justify-center">
+      <div class="inline-flex p-1 bg-slate-200/80 rounded-xl space-x-1 shadow-inner max-w-full overflow-x-auto custom-scrollbar">
+        <button id="tab-ja" data-lang="ja" class="lang-tab px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 bg-white text-indigo-600 shadow-sm flex items-center gap-1.5 whitespace-nowrap">
+          <span>🇯🇵</span>
+          <span>Japanese</span>
+          <span class="text-[10px] font-normal opacity-70 hidden sm:inline">(Kana/Kanji)</span>
+        </button>
+        <button id="tab-zh" data-lang="zh" class="lang-tab px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 text-slate-600 hover:text-slate-900 hover:bg-white/50 flex items-center gap-1.5 whitespace-nowrap">
+          <span>🇨🇳</span>
+          <span>Chinese</span>
+          <span class="text-[10px] font-normal opacity-70 hidden sm:inline">(Hanzi/Hanja)</span>
+        </button>
+        <button id="tab-ko" data-lang="ko" class="lang-tab px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 text-slate-600 hover:text-slate-900 hover:bg-white/50 flex items-center gap-1.5 whitespace-nowrap">
+          <span>🇰🇷</span>
+          <span>Korean</span>
+          <span class="text-[10px] font-normal opacity-70 hidden sm:inline">(Hangul/Hanja)</span>
+        </button>
+        <button id="tab-ru" data-lang="ru" class="lang-tab px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 text-slate-600 hover:text-slate-900 hover:bg-white/50 flex items-center gap-1.5 whitespace-nowrap">
+          <span>🇷🇺</span>
+          <span>Russian</span>
+          <span class="text-[10px] font-normal opacity-70 hidden sm:inline">(Cyrillic)</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Dynamic Status Badge -->
+    <div class="mt-2.5 flex items-center justify-center">
+      <div id="engine-status-badge" class="inline-flex items-center gap-2 px-3 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200 transition-all duration-300">
+        <i id="engine-icon" class="fa-solid fa-circle-notch fa-spin text-amber-500 text-[10px]"></i>
+        <span id="engine-status-text">Loading Japanese Kanji Engine...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Drawing & Transliteration Card -->
+  <main class="w-full max-w-3xl bg-white shadow-xl shadow-slate-200/70 border border-slate-200 rounded-2xl p-4 sm:p-6 space-y-4">
+
+    <!-- Top Canvas Card Area -->
+    <div class="flex flex-col items-center">
+      <div class="w-full flex items-center justify-between mb-2">
+        <span id="canvas-label" class="text-xs font-semibold uppercase text-slate-500 tracking-wider flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          Input Canvas <span id="current-lang-hint" class="font-normal text-slate-400 capitalize">(Japanese)</span>
+        </span>
+        <div class="flex items-center space-x-2">
+          <button id="undo-btn" type="button" title="Undo last stroke" class="px-2.5 py-1 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 active:scale-95 rounded-lg transition flex items-center gap-1">
+            <i class="fa-solid fa-arrow-rotate-left"></i>
+            Undo
+          </button>
+          <button id="clear-btn" type="button" title="Clear canvas" class="px-2.5 py-1 text-xs font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 active:scale-95 rounded-lg transition flex items-center gap-1">
+            <i class="fa-solid fa-trash-can"></i>
+            Clear Canvas
+          </button>
+        </div>
+      </div>
+
+      <!-- Canvas Area -->
+      <div id="canvas-box" class="canvas-container w-full aspect-square max-w-[310px] sm:max-w-[330px] border-2 border-slate-300 rounded-2xl overflow-hidden bg-slate-50/70 shadow-inner grid-guide-cjk relative">
+        <canvas id="paint-canvas" class="w-full h-full block cursor-crosshair"></canvas>
+        <div id="canvas-hint" class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-slate-300 select-none">
+          <i class="fa-solid fa-pencil text-3xl mb-1.5 opacity-60"></i>
+          <span id="canvas-placeholder-text" class="text-xs font-medium tracking-wide">Draw Kana or Kanji here</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recognition Candidates Row -->
+    <div class="space-y-1.5">
+      <div class="flex items-center justify-between text-xs font-medium text-slate-500">
+        <span class="flex items-center gap-1.5 font-semibold text-slate-700">
+          <i class="fa-regular fa-lightbulb text-indigo-500"></i>
+          Recognition Candidates
+        </span>
+        <span id="status-indicator" class="text-slate-400 italic">Draw to recognize</span>
+      </div>
+      
+      <!-- Horizontal Candidate List -->
+      <div id="candidates-container" class="custom-scrollbar flex items-center gap-2 overflow-x-auto p-2 bg-slate-100/90 rounded-xl min-h-[58px] border border-slate-200">
+        <p class="text-xs text-slate-400 mx-auto select-none">Draw strokes above to see results</p>
+      </div>
+    </div>
+
+    <!-- Output Fields: Box 1 (Editable) and Box 2 (Read-only) -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+      
+      <!-- Box 1: Original Language Output (Editable) -->
+      <div class="space-y-1.5 flex flex-col">
+        <div class="flex items-center justify-between">
+          <label for="text-output-box" class="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <span id="box1-label">Box 1: Japanese</span>
+            <span class="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-medium border border-emerald-200/60">Editable</span>
+          </label>
+          <div class="flex items-center space-x-1">
+            <button id="space-btn" type="button" title="Insert space" class="px-2 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 active:scale-95 rounded transition">
+              Space
+            </button>
+            <button id="backspace-btn" type="button" title="Delete last character" class="px-2 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 active:scale-95 rounded transition">
+              <i class="fa-solid fa-delete-left"></i>
+            </button>
+            <button id="clear-all-btn" type="button" title="Clear text" class="px-2 py-1 text-xs font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 active:scale-95 rounded transition">
+              <i class="fa-solid fa-broom"></i>
+            </button>
+            <button id="copy-text-btn" type="button" title="Copy text" class="px-2.5 py-1 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 rounded transition shadow-sm flex items-center gap-1">
+              <i class="fa-regular fa-copy"></i>
+              Copy
+            </button>
+          </div>
+        </div>
+        <textarea id="text-output-box" rows="4" placeholder="Type or select recognized characters..." class="w-full text-base sm:text-lg tracking-wider p-3 bg-white text-slate-900 border border-slate-300 rounded-xl shadow-inner select-text outline-none resize-none font-medium transition"></textarea>
+      </div>
+
+      <!-- Box 2: Romanized / Latinized Output (Read-only) -->
+      <div class="space-y-1.5 flex flex-col">
+        <div class="flex items-center justify-between">
+          <label for="romaji-output-box" class="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <span id="box2-label">Box 2: Romaji Translation</span>
+            <span class="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-medium border border-amber-200/60">Read-only</span>
+          </label>
+          <button id="copy-romaji-btn" type="button" title="Copy Romanization" class="px-2.5 py-1 text-xs font-semibold text-white bg-slate-700 hover:bg-slate-800 active:scale-95 rounded transition shadow-sm flex items-center gap-1">
+            <i class="fa-regular fa-copy"></i>
+            Copy Romanization
+          </button>
+        </div>
+        <textarea id="romaji-output-box" rows="4" readonly placeholder="Automatic romanized transliteration..." class="w-full text-base sm:text-lg tracking-wide p-3 bg-slate-100 text-slate-800 border border-slate-200 rounded-xl shadow-inner cursor-default select-text outline-none resize-none"></textarea>
+      </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur text-white text-xs font-medium py-2 px-4 rounded-full shadow-xl transition-all duration-300 pointer-events-none z-50 flex items-center gap-2">
+      <i class="fa-solid fa-check text-emerald-400"></i>
+      <span id="toast-message">Copied to clipboard!</span>
+    </div>
+
+  </main>
+
+  <footer class="mt-4 text-xs text-slate-400 text-center max-w-md">
+    Google Input Tools Recognition &bull; Real-time Romanization for Japanese, Chinese, Korean, and Russian.
+  </footer>
+
+  <script>
+    // Tab and Language configurations
+    const CONFIGS = {
+      ja: {
+        name: 'Japanese',
+        itc: 'ja-t-i0-handwrit',
+        guideClass: 'grid-guide-cjk',
+        placeholder: 'Draw Kana or Kanji here',
+        box1Label: 'Box 1: Japanese (Kana/Kanji)',
+        box2Label: 'Box 2: Romaji',
+        romajiPlaceholder: 'Full Romaji transliteration (Kana & Kanji)...'
+      },
+      zh: {
+        name: 'Chinese',
+        itc: 'zh-t-i0-handwrit',
+        guideClass: 'grid-guide-cjk',
+        placeholder: 'Draw Chinese characters (汉字 / 漢字) here',
+        box1Label: 'Box 1: Chinese (Hanzi / Hanja)',
+        box2Label: 'Box 2: Pinyin',
+        romajiPlaceholder: 'Real-time Pinyin with tone marks...'
+      },
+      ko: {
+        name: 'Korean',
+        itc: 'ko-t-i0-handwrit',
+        guideClass: 'grid-guide-cjk',
+        placeholder: 'Draw Korean Hangul (한글) or Hanja (漢字) here',
+        box1Label: 'Box 1: Korean (Hangul / Hanja)',
+        box2Label: 'Box 2: Revised Romanization',
+        romajiPlaceholder: 'Revised Romanization of Korean...'
+      },
+      ru: {
+        name: 'Russian',
+        itc: 'ru-t-i0-handwrit',
+        guideClass: 'grid-guide-ru',
+        placeholder: 'Draw Russian Cyrillic (Кириллица) here',
+        box1Label: 'Box 1: Russian (Cyrillic)',
+        box2Label: 'Box 2: Latin Transliteration',
+        romajiPlaceholder: 'Cyrillic to Latin (GOST / BGN-PCGN)...'
+      }
+    };
+
+    let activeLang = 'ja';
+
+    // Canvas & UI elements
+    const canvas = document.getElementById('paint-canvas');
+    const canvasBox = document.getElementById('canvas-box');
+    const ctx = canvas.getContext('2d');
+    const hint = document.getElementById('canvas-hint');
+    const canvasPlaceholderText = document.getElementById('canvas-placeholder-text');
+    const candidatesContainer = document.getElementById('candidates-container');
+    const statusIndicator = document.getElementById('status-indicator');
+    const currentLangHint = document.getElementById('current-lang-hint');
+
+    const textOutputBox = document.getElementById('text-output-box');
+    const romajiOutputBox = document.getElementById('romaji-output-box');
+    const box1Label = document.getElementById('box1-label');
+    const box2Label = document.getElementById('box2-label');
+
+    const clearBtn = document.getElementById('clear-btn');
+    const undoBtn = document.getElementById('undo-btn');
+    const copyTextBtn = document.getElementById('copy-text-btn');
+    const copyRomajiBtn = document.getElementById('copy-romaji-btn');
+    const spaceBtn = document.getElementById('space-btn');
+    const backspaceBtn = document.getElementById('backspace-btn');
+    const clearAllBtn = document.getElementById('clear-all-btn');
+    const toast = document.getElementById('toast');
+    const toastMessage = document.getElementById('toast-message');
+
+    const engineBadge = document.getElementById('engine-status-badge');
+    const engineIcon = document.getElementById('engine-icon');
+    const engineStatusText = document.getElementById('engine-status-text');
+
+    // Drawing state
+    let strokes = [];
+    let currentStroke = null;
+    let isDrawing = false;
+    let recognitionTimeout = null;
+
+    // Last known selection/cursor position in textOutputBox (for clean insertion without force-highlighting)
+    let lastSelection = {
+      start: null,
+      end: null
+    };
+
+    function recordSelection() {
+      lastSelection.start = textOutputBox.selectionStart;
+      lastSelection.end = textOutputBox.selectionEnd;
+    }
+
+    textOutputBox.addEventListener('keyup', recordSelection);
+    textOutputBox.addEventListener('mouseup', recordSelection);
+    textOutputBox.addEventListener('input', () => {
+      recordSelection();
+      updateRomanization();
+    });
+
+    // Japanese Kuroshiro State
+    let kuroshiroInstance = null;
+    let isKuroshiroReady = false;
+
+    const KANA_MAP = {
+      // Hiragana digraphs
+      'きゃ': 'kya', 'きゅ': 'kyu', 'きょ': 'kyo',
+      'しゃ': 'sha', 'しゅ': 'shu', 'しょ': 'sho',
+      'ちゃ': 'cha', 'ちゅ': 'chu', 'ちょ': 'cho',
+      'にゃ': 'nya', 'にゅ': 'nyu', 'にょ': 'nyo',
+      'ひゃ': 'hya', 'ひゅ': 'hyu', 'ひょ': 'hyo',
+      'みゃ': 'mya', 'みゅ': 'myu', 'みょ': 'myo',
+      'りゃ': 'rya', 'りゅ': 'ryu', 'りょ': 'ryo',
+      'ぎゃ': 'gya', 'ぎゅ': 'gyu', 'ぎょ': 'gyo',
+      'じゃ': 'ja',  'じゅ': 'ju',  'じょ': 'jo',
+      'ぢゃ': 'ja',  'ぢゅ': 'ju',  'ぢょ': 'jo',
+      'びゃ': 'bya', 'びゅ': 'byu', 'びょ': 'byo',
+      'ぴゃ': 'pya', 'ぴゅ': 'pyu', 'ぴょ': 'pyo',
+
+      // Katakana digraphs
+      'キャ': 'kya', 'キュ': 'kyu', 'キョ': 'kyo',
+      'シャ': 'sha', 'シュ': 'shu', 'ショ': 'sho',
+      'チャ': 'cha', 'チュ': 'chu', 'チョ': 'cho',
+      'ニャ': 'nya', 'ニュ': 'nyu', 'ニョ': 'nyo',
+      'ヒャ': 'hya', 'ヒュ': 'hyu', 'ヒョ': 'hyo',
+      'ミャ': 'mya', 'ミュ': 'myu', 'ミョ': 'myo',
+      'リャ': 'rya', 'リュ': 'ryu', 'リョ': 'ryo',
+      'ギャ': 'gya', 'ギュ': 'gyu', 'ギョ': 'gyo',
+      'ジャ': 'ja',  'ジュ': 'ju',  'ジョ': 'jo',
+      'ヂャ': 'ja',  'ヂュ': 'ju',  'ヂョ': 'jo',
+      'ビャ': 'bya', 'ビュ': 'byu', 'ビョ': 'byo',
+      'ピャ': 'pya', 'ピュ': 'pyu', 'ピョ': 'pyo',
+
+      // Katakana modern extended
+      'ティ': 'ti',  'ディ': 'di',  'トゥ': 'tu',  'ドゥ': 'du',
+      'ファ': 'fa',  'フィ': 'fi',  'フェ': 'fe',  'フォ': 'fo',  'フュ': 'fyu',
+      'ウィ': 'wi',  'ウェ': 'we',  'ウォ': 'wo',  'ヴァ': 'va',
+      'ヴィ': 'vi',  'ヴ': 'vu',    'ヴェ': 've',  'ヴォ': 'vo',
+      'チェ': 'che', 'シェ': 'she', 'ジェ': 'je',
+
+      // Hiragana basic
+      'あ': 'a',  'い': 'i',  'う': 'u',  'え': 'e',  'お': 'o',
+      'か': 'ka', 'き': 'ki', 'く': 'ku', 'け': 'ke', 'こ': 'ko',
+      'さ': 'sa', 'し': 'shi','す': 'su', 'せ': 'se', 'そ': 'so',
+      'た': 'ta', 'ち': 'chi','つ': 'tsu','て': 'te', 'と': 'to',
+      'な': 'na', 'に': 'ni', 'ぬ': 'nu', 'ね': 'ne', 'の': 'no',
+      'は': 'ha', 'ひ': 'hi', 'ふ': 'fu', 'へ': 'he', 'ほ': 'ho',
+      'ま': 'ma', 'み': 'mi', 'む': 'mu', 'me': 'me', 'も': 'mo',
+      'や': 'ya',             'ゆ': 'yu',             'よ': 'yo',
+      'ら': 'ra', 'り': 'ri', 'る': 'ru', 'れ': 're', 'ろ': 'ro',
+      'わ': 'wa', 'ゐ': 'wi',             'ゑ': 'we', 'を': 'o',
+      'ん': 'n',
+      'が': 'ga', 'ぎ': 'gi', 'ぐ': 'gu', 'げ': 'ge', 'ご': 'go',
+      'ざ': 'za', 'じ': 'ji', 'ず': 'zu', 'ぜ': 'ze', 'ぞ': 'zo',
+      'だ': 'da', 'ぢ': 'ji', 'づ': 'zu', 'de': 'de', 'ど': 'do',
+      'ば': 'ba', 'び': 'bi', 'ぶ': 'bu', 'be': 'be', 'ぼ': 'bo',
+      'ぱ': 'pa', 'ぴ': 'pi', 'ぷ': 'pu', 'pe': 'pe', 'ぽ': 'po',
+
+      // Katakana basic
+      'ア': 'a',  'イ': 'i',  'ウ': 'u',  'エ': 'e',  'オ': 'o',
+      'カ': 'ka', 'キ': 'ki', 'ク': 'ku', 'ケ': 'ke', 'コ': 'ko',
+      'サ': 'sa', 'シ': 'shi','ス': 'su', 'セ': 'se', 'ソ': 'so',
+      'タ': 'ta', 'チ': 'chi','ツ': 'tsu','テ': 'te', 'ト': 'to',
+      'ナ': 'na', 'ニ': 'ni', 'ヌ': 'nu', 'ネ': 'ne', 'ノ': 'no',
+      'ハ': 'ha', 'ヒ': 'hi', 'フ': 'fu', 'ヘ': 'he', 'ホ': 'ho',
+      'マ': 'ma', 'ミ': 'mi', 'ム': 'mu', 'メ': 'me', 'モ': 'mo',
+      'ヤ': 'ya',             'ユ': 'yu',             'ヨ': 'yo',
+      'ラ': 'ra', 'リ': 'ri', 'ル': 'ru', 'レ': 're', 'ロ': 'ro',
+      'ワ': 'wa', 'ヰ': 'wi',             'ヱ': 'we', 'ヲ': 'o',
+      'ン': 'n',
+      'ガ': 'ga', 'ギ': 'gi', 'グ': 'gu', 'ゲ': 'ge', 'ゴ': 'go',
+      'ザ': 'za', 'ジ': 'ji', 'ズ': 'zu', 'ゼ': 'ze', 'ゾ': 'zo',
+      'ダ': 'da', 'ヂ': 'ji', 'ヅ': 'zu', 'デ': 'de', 'ド': 'do',
+      'バ': 'ba', 'ビ': 'bi', 'ブ': 'bu', 'ベ': 'be', 'ボ': 'bo',
+      'パ': 'pa', 'ピ': 'pi', 'プ': 'pu', 'ペ': 'pe', 'ポ': 'po',
+      'ぁ': 'a',  'ぃ': 'i',  'ぅ': 'u',  'ぇ': 'e',  'ぉ': 'o',
+      'ァ': 'a',  'ィ': 'i',  'ゥ': 'u',  'ェ': 'e',  'ォ': 'o'
+    };
+
+    const FALLBACK_KANJI_DICT = {
+      '日本': 'nihon', '東京': 'toukyou', '京都': 'kyouto', '大阪': 'oosaka',
+      '私': 'watashi', '僕': 'boku', '俺': 'ore', '彼': 'kare', '彼女': 'kanojo',
+      '学校': 'gakkou', '先生': 'sensei', '学生': 'gakusei', '大学': 'daigaku',
+      '友達': 'tomodachi', '今日': 'kyou', '明日': 'ashita', '昨日': 'kinou',
+      '今': 'ima', '時間': 'jikan', '水': 'mizu', '火': 'hi', '木': 'ki',
+      '金': 'kane', '土': 'tsuchi', '日': 'hi', '月': 'tsuki', '年': 'toshi',
+      '人': 'hito', '男': 'otoko', '女': 'onna', '子': 'ko', '友': 'tomo',
+      '食べる': 'taberu', '飲む': 'nomu', '見る': 'miru', '行く': 'iku',
+      '来る': 'kuru', '言う': 'iu', '話す': 'hanasu', '聞く': 'kiku',
+      '車': 'kuruma', '本': 'hon', '山': 'yama', '川': 'kawa', '空': 'sora',
+      '雨': 'ame', '花': 'hana', '犬': 'inu', '猫': 'neko', '魚': 'sakana',
+      '一': 'ichi', '二': 'ni', '三': 'san', '四': 'yon', '五': 'go',
+      '六': 'roku', '七': 'nana', '八': 'hachi', '九': 'kyuu', '十': 'juu',
+      '百': 'hyaku', '千': 'sen', '万': 'man', '円': 'en', '上': 'ue',
+      '下': 'shita', '中': 'naka', '大': 'dai', '小': 'shou', '前': 'mae',
+      '後': 'ushiro', '右': 'migi', '左': 'hidari', '心': 'kokoro', '愛': 'ai'
+    };
+
+    const CYRILLIC_MAP = {
+      'А': 'A', 'а': 'a',
+      'Б': 'B', 'б': 'b',
+      'В': 'V', 'в': 'v',
+      'Г': 'G', 'г': 'g',
+      'Д': 'D', 'д': 'd',
+      'Е': 'E', 'е': 'e',
+      'Ё': 'Yo', 'ё': 'yo',
+      'Ж': 'Zh', 'ж': 'zh',
+      'З': 'Z', 'з': 'z',
+      'И': 'I', 'и': 'i',
+      'Й': 'Y', 'й': 'y',
+      'К': 'K', 'к': 'k',
+      'Л': 'L', 'л': 'l',
+      'М': 'M', 'м': 'm',
+      'Н': 'N', 'н': 'n',
+      'О': 'O', 'о': 'o',
+      'П': 'P', 'п': 'p',
+      'Р': 'R', 'р': 'r',
+      'С': 'S', 'с': 's',
+      'Т': 'T', 'т': 't',
+      'У': 'U', 'у': 'u',
+      'Ф': 'F', 'ф': 'f',
+      'Х': 'Kh', 'х': 'kh',
+      'Ц': 'Ts', 'ц': 'ts',
+      'Ч': 'Ch', 'ч': 'ch',
+      'Ш': 'Sh', 'ш': 'sh',
+      'Щ': 'Shch', 'щ': 'shch',
+      'Ъ': '', 'ъ': '',
+      'Ы': 'Y', 'ы': 'y',
+      'Ь': "'", 'ь': "'",
+      'Э': 'E', 'э': 'e',
+      'Ю': 'Yu', 'ю': 'yu',
+      'Я': 'Ya', 'я': 'ya'
+    };
+
+    // Hangul Decomposition (Revised Romanization)
+    const HANGUL_INITIALS = ['g', 'kk', 'n', 'd', 'tt', 'r', 'm', 'b', 'pp', 's', 'ss', '', 'j', 'jj', 'ch', 'k', 't', 'p', 'h'];
+    const HANGUL_MEDIALS  = ['a', 'ae', 'ya', 'yae', 'eo', 'e', 'yeo', 'ye', 'o', 'wa', 'wae', 'oe', 'yo', 'u', 'wo', 'we', 'wi', 'yu', 'eu', 'ui', 'i'];
+    const HANGUL_FINALS   = ['', 'k', 'k', 'ks', 'n', 'nj', 'nh', 't', 'l', 'lg', 'lm', 'lb', 'ls', 'lt', 'lp', 'lh', 'm', 'p', 'ps', 't', 't', 'ng', 't', 't', 'k', 't', 'p', 'h'];
+
+    // Common Korean Hanja Readings
+    const HANJA_TO_HANGUL = {
+      '學': '학', '校': '교', '大': '대', '人': '인', '國': '국', '日': '일',
+      '月': '월', '年': '년', '中': '중', '山': '산', '水': '수', '金': '금',
+      '木': '목', '火': '화', '土': '토', '生': '생', '先': '선', '手': '수',
+      '文': '문', '時': '시', '間': '간', '家': '가', '車': '차', '韓': '한'
+    };
+
+    function transliterateHangulChar(char) {
+      if (HANJA_TO_HANGUL[char]) {
+        char = HANJA_TO_HANGUL[char];
+      }
+
+      const code = char.charCodeAt(0);
+      if (code >= 0xAC00 && code <= 0xD7A3) {
+        const syllableIndex = code - 0xAC00;
+        const initialIndex = Math.floor(syllableIndex / 588);
+        const medialIndex = Math.floor((syllableIndex % 588) / 28);
+        const finalIndex = syllableIndex % 28;
+
+        return HANGUL_INITIALS[initialIndex] + HANGUL_MEDIALS[medialIndex] + HANGUL_FINALS[finalIndex];
+      }
+
+      if (code >= 0x3131 && code <= 0x318E) {
+        return char;
+      }
+
+      return char;
+    }
+
+    function transliterateKorean(text) {
+      let out = '';
+      for (const char of text) {
+        out += transliterateHangulChar(char);
+      }
+      return out;
+    }
+
+    function transliterateRussian(text) {
+      let out = '';
+      for (const char of text) {
+        if (CYRILLIC_MAP.hasOwnProperty(char)) {
+          out += CYRILLIC_MAP[char];
+        } else {
+          out += char;
+        }
+      }
+      return out;
+    }
+
+    function transliterateChinese(text) {
+      if (!text) return '';
+      if (window.pinyinPro && typeof window.pinyinPro.pinyin === 'function') {
+        try {
+          return window.pinyinPro.pinyin(text, { toneType: 'symbol', type: 'string' });
+        } catch (e) {
+          console.warn('pinyin-pro error:', e);
+        }
+      }
+      return text;
+    }
+
+    function fallbackJapaneseTransliterate(text) {
+      if (!text) return '';
+      let result = '';
+      let i = 0;
+      let lastVowel = '';
+
+      while (i < text.length) {
+        let matchedKanji = false;
+        for (let len = 4; len >= 1; len--) {
+          if (i + len <= text.length) {
+            const substr = text.substring(i, i + len);
+            if (FALLBACK_KANJI_DICT[substr]) {
+              result += (result.length > 0 && !result.endsWith(' ') ? ' ' : '') + FALLBACK_KANJI_DICT[substr] + ' ';
+              lastVowel = FALLBACK_KANJI_DICT[substr].slice(-1);
+              i += len;
+              matchedKanji = true;
+              break;
+            }
+          }
+        }
+        if (matchedKanji) continue;
+
+        const twoChar = text.substring(i, i + 2);
+        if (KANA_MAP[twoChar]) {
+          const romaji = KANA_MAP[twoChar];
+          result += romaji;
+          lastVowel = romaji.slice(-1);
+          i += 2;
+          continue;
+        }
+
+        if (text[i] === 'っ' || text[i] === 'ッ') {
+          const nextTwo = text.substring(i + 1, i + 3);
+          const nextOne = text.substring(i + 1, i + 2);
+          const nextRomaji = KANA_MAP[nextTwo] || KANA_MAP[nextOne];
+          if (nextRomaji && /^[a-z]/i.test(nextRomaji)) {
+            result += nextRomaji.startsWith('ch') ? 't' : nextRomaji[0];
+          }
+          i++;
+          continue;
+        }
+
+        if (text[i] === 'ー') {
+          result += (lastVowel && /[aeiou]/i.test(lastVowel)) ? lastVowel : '-';
+          i++;
+          continue;
+        }
+
+        const oneChar = text[i];
+        if (KANA_MAP[oneChar]) {
+          const romaji = KANA_MAP[oneChar];
+          result += romaji;
+          lastVowel = romaji.slice(-1);
+          i++;
+          continue;
+        }
+
+        result += oneChar;
+        lastVowel = '';
+        i++;
+      }
+
+      return result.trim().replace(/\s+/g, ' ');
+    }
+
+    async function transliterateJapanese(text) {
+      if (!text) return '';
+      if (isKuroshiroReady && kuroshiroInstance) {
+        try {
+          return await kuroshiroInstance.convert(text, {
+            to: 'romaji',
+            mode: 'spaced',
+            romajiSystem: 'hepburn'
+          });
+        } catch (e) {
+          console.warn('Kuroshiro convert fallback:', e);
+        }
+      }
+      return fallbackJapaneseTransliterate(text);
+    }
+
+    async function updateRomanization() {
+      const text = textOutputBox.value;
+      if (!text.trim()) {
+        romajiOutputBox.value = '';
+        return;
+      }
+
+      switch (activeLang) {
+        case 'ja':
+          romajiOutputBox.value = await transliterateJapanese(text);
+          break;
+        case 'zh':
+          romajiOutputBox.value = transliterateChinese(text);
+          break;
+        case 'ko':
+          romajiOutputBox.value = transliterateKorean(text);
+          break;
+        case 'ru':
+          romajiOutputBox.value = transliterateRussian(text);
+          break;
+        default:
+          romajiOutputBox.value = text;
+      }
+    }
+
+    async function initKuroshiroJapanese() {
+      try {
+        if (typeof Kuroshiro === 'undefined' || typeof KuromojiAnalyzer === 'undefined') {
+          throw new Error('Kuroshiro scripts unavailable');
+        }
+        const kuro = new Kuroshiro.default ? new Kuroshiro.default() : new Kuroshiro();
+        const analyzer = new KuromojiAnalyzer({
+          dictPath: 'https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/'
+        });
+        await kuro.init(analyzer);
+        kuroshiroInstance = kuro;
+        isKuroshiroReady = true;
+
+        if (activeLang === 'ja') {
+          engineBadge.className = 'inline-flex items-center gap-2 px-3 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 transition-all duration-300';
+          engineIcon.className = 'fa-solid fa-check text-emerald-500 text-[10px]';
+          engineStatusText.textContent = 'Japanese Kanji Engine Ready';
+          updateRomanization();
+        }
+      } catch (e) {
+        console.warn('Kuroshiro initialization warning:', e);
+        if (activeLang === 'ja') {
+          engineBadge.className = 'inline-flex items-center gap-2 px-3 py-0.5 rounded-full text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 transition-all duration-300';
+          engineIcon.className = 'fa-solid fa-bolt text-indigo-500 text-[10px]';
+          engineStatusText.textContent = 'Japanese Fast Mode (Active)';
+        }
+      }
+    }
+
+    function switchLanguage(lang) {
+      if (!CONFIGS[lang]) return;
+      activeLang = lang;
+
+      // Update tab buttons visually
+      document.querySelectorAll('.lang-tab').forEach(tab => {
+        if (tab.dataset.lang === lang) {
+          tab.className = 'lang-tab px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 bg-white text-indigo-600 shadow-sm flex items-center gap-1.5 whitespace-nowrap';
+        } else {
+          tab.className = 'lang-tab px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 text-slate-600 hover:text-slate-900 hover:bg-white/50 flex items-center gap-1.5 whitespace-nowrap';
+        }
+      });
+
+      // Update UI Labels & Placeholders
+      const conf = CONFIGS[lang];
+      currentLangHint.textContent = `(${conf.name})`;
+      canvasPlaceholderText.textContent = conf.placeholder;
+      box1Label.textContent = conf.box1Label;
+      box2Label.textContent = conf.box2Label;
+      romajiOutputBox.placeholder = conf.romajiPlaceholder;
+
+      // Guide grid style
+      canvasBox.className = `canvas-container w-full aspect-square max-w-[310px] sm:max-w-[330px] border-2 border-slate-300 rounded-2xl overflow-hidden bg-slate-50/70 shadow-inner ${conf.guideClass} relative`;
+
+      // Status indicator update
+      if (lang === 'ja') {
+        if (isKuroshiroReady) {
+          engineBadge.className = 'inline-flex items-center gap-2 px-3 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 transition-all duration-300';
+          engineIcon.className = 'fa-solid fa-check text-emerald-500 text-[10px]';
+          engineStatusText.textContent = 'Japanese Kanji Engine Ready';
+        } else {
+          engineBadge.className = 'inline-flex items-center gap-2 px-3 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200 transition-all duration-300';
+          engineIcon.className = 'fa-solid fa-circle-notch fa-spin text-amber-500 text-[10px]';
+          engineStatusText.textContent = 'Loading Japanese Engine...';
+        }
+      } else if (lang === 'zh') {
+        engineBadge.className = 'inline-flex items-center gap-2 px-3 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 transition-all duration-300';
+        engineIcon.className = 'fa-solid fa-circle-check text-emerald-500 text-[10px]';
+        engineStatusText.textContent = 'Chinese Pinyin Engine Ready';
+      } else if (lang === 'ko') {
+        engineBadge.className = 'inline-flex items-center gap-2 px-3 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 transition-all duration-300';
+        engineIcon.className = 'fa-solid fa-circle-check text-emerald-500 text-[10px]';
+        engineStatusText.textContent = 'Korean Hangul & Hanja Engine Ready';
+      } else if (lang === 'ru') {
+        engineBadge.className = 'inline-flex items-center gap-2 px-3 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 transition-all duration-300';
+        engineIcon.className = 'fa-solid fa-circle-check text-emerald-500 text-[10px]';
+        engineStatusText.textContent = 'Russian Cyrillic GOST Transliteration Ready';
+      }
+
+      clearCanvas();
+      updateRomanization();
+    }
+
+    document.querySelectorAll('.lang-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        switchLanguage(tab.dataset.lang);
+      });
+    });
+
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      
+      ctx.scale(dpr, dpr);
+      redrawCanvas();
+    }
+
+    function redrawCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      ctx.clearRect(0, 0, rect.width, rect.height);
+
+      if (strokes.length === 0) {
+        hint.style.display = 'flex';
+        return;
+      }
+      hint.style.display = 'none';
+
+      ctx.lineWidth = 5.2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = '#1e293b';
+
+      for (const stroke of strokes) {
+        const xs = stroke[0];
+        const ys = stroke[1];
+        if (xs.length === 0) continue;
+
+        ctx.beginPath();
+        ctx.moveTo(xs[0], ys[0]);
+        for (let i = 1; i < xs.length; i++) {
+          ctx.lineTo(xs[i], ys[i]);
+        }
+        ctx.stroke();
+      }
+    }
+
+    function getCanvasCoordinates(e) {
+      const rect = canvas.getBoundingClientRect();
+      let clientX, clientY;
+
+      if (e.touches && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+      }
+
+      return {
+        x: Math.round(clientX - rect.left),
+        y: Math.round(clientY - rect.top)
+      };
+    }
+
+    function startDrawing(e) {
+      e.preventDefault();
+      isDrawing = true;
+      const { x, y } = getCanvasCoordinates(e);
+      const now = Date.now();
+
+      currentStroke = [ [x], [y], [now] ];
+      strokes.push(currentStroke);
+
+      hint.style.display = 'none';
+      ctx.lineWidth = 5.2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = '#1e293b';
+
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+
+      clearTimeout(recognitionTimeout);
+    }
+
+    function draw(e) {
+      if (!isDrawing || !currentStroke) return;
+      e.preventDefault();
+
+      const { x, y } = getCanvasCoordinates(e);
+      const now = Date.now();
+
+      currentStroke[0].push(x);
+      currentStroke[1].push(y);
+      currentStroke[2].push(now);
+
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    }
+
+    function stopDrawing(e) {
+      if (!isDrawing) return;
+      isDrawing = false;
+      ctx.closePath();
+
+      clearTimeout(recognitionTimeout);
+      recognitionTimeout = setTimeout(requestRecognition, 350);
+    }
+
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', draw);
+    window.addEventListener('mouseup', stopDrawing);
+
+    canvas.addEventListener('touchstart', startDrawing, { passive: false });
+    canvas.addEventListener('touchmove', draw, { passive: false });
+    window.addEventListener('touchend', stopDrawing);
+    window.addEventListener('touchcancel', stopDrawing);
+
+    async function requestRecognition() {
+      if (strokes.length === 0) {
+        renderCandidates([]);
+        return;
+      }
+
+      statusIndicator.textContent = `Recognizing ${CONFIGS[activeLang].name}...`;
+      const rect = canvas.getBoundingClientRect();
+      const currentConfig = CONFIGS[activeLang];
+
+      const payload = {
+        app_version: 0.4,
+        api_level: "537.36",
+        device: navigator.userAgent,
+        input_type: 0,
+        options: "enable_pre_space",
+        requests: [
+          {
+            writing_guide: {
+              writing_area_width: Math.round(rect.width),
+              writing_area_height: Math.round(rect.height)
+            },
+            pre_context: "",
+            max_num_results: 14,
+            max_completions: 0,
+            language: activeLang,
+            ink: strokes
+          }
+        ]
+      };
+
+      try {
+        const url = `https://inputtools.google.com/request?itc=${currentConfig.itc}&app=translate`;
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        if (data && data[0] === 'SUCCESS' && data[1] && data[1][0] && data[1][0][1]) {
+          const candidates = data[1][0][1];
+          renderCandidates(candidates);
+          statusIndicator.textContent = 'Ready';
+        } else {
+          renderCandidates([]);
+          statusIndicator.textContent = 'No match found';
+        }
+      } catch (err) {
+        console.error('Google Input Tools API error:', err);
+        statusIndicator.textContent = 'Recognition error';
+      }
+    }
+
+    function renderCandidates(candidates) {
+      candidatesContainer.innerHTML = '';
+      if (!candidates || candidates.length === 0) {
+        const emptyMsg = document.createElement('p');
+        emptyMsg.className = 'text-xs text-slate-400 mx-auto select-none';
+        emptyMsg.textContent = strokes.length > 0 ? 'No candidates' : 'Draw strokes above to see results';
+        candidatesContainer.appendChild(emptyMsg);
+        return;
+      }
+
+      candidates.forEach((cand, idx) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `flex-shrink-0 h-10 px-3.5 py-1 rounded-lg text-lg font-medium transition-all ${
+          idx === 0 
+            ? 'bg-indigo-600 text-white shadow hover:bg-indigo-700' 
+            : 'bg-white text-slate-800 border border-slate-200 hover:bg-slate-50'
+        } active:scale-95 flex items-center justify-center`;
+        btn.textContent = cand;
+        btn.title = `Insert "${cand}"`;
+
+        // Prevent mousedown from stealing focus or triggering focus highlight on text-output-box
+        btn.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+        });
+
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          // Insert candidate character without focusing or highlighting Box 1
+          insertCharacter(cand, false);
+          clearCanvas();
+        });
+        candidatesContainer.appendChild(btn);
+      });
+    }
+
+    function clearCanvas() {
+      strokes = [];
+      redrawCanvas();
+      candidatesContainer.innerHTML = '<p class="text-xs text-slate-400 mx-auto select-none">Canvas cleared</p>';
+      statusIndicator.textContent = 'Draw to recognize';
+    }
+
+    // Insert character at cursor or append, explicitly ensuring no focus ring / highlight on Box 1
+    function insertCharacter(char, shouldFocus = false) {
+      const val = textOutputBox.value;
+      
+      if (lastSelection.start !== null && lastSelection.end !== null) {
+        const start = lastSelection.start;
+        const end = lastSelection.end;
+        textOutputBox.value = val.substring(0, start) + char + val.substring(end);
+        lastSelection.start = start + char.length;
+        lastSelection.end = start + char.length;
+      } else {
+        textOutputBox.value += char;
+        lastSelection.start = textOutputBox.value.length;
+        lastSelection.end = textOutputBox.value.length;
+      }
+
+      if (shouldFocus) {
+        textOutputBox.focus();
+        textOutputBox.setSelectionRange(lastSelection.start, lastSelection.end);
+      } else {
+        // Explicitly blur so no focus highlight appears on Box 1 when selecting a candidate
+        textOutputBox.blur();
+      }
+
+      updateRomanization();
+    }
+
+    clearBtn.addEventListener('click', clearCanvas);
+
+    undoBtn.addEventListener('click', () => {
+      if (strokes.length > 0) {
+        strokes.pop();
+        redrawCanvas();
+        clearTimeout(recognitionTimeout);
+        if (strokes.length > 0) {
+          recognitionTimeout = setTimeout(requestRecognition, 200);
+        } else {
+          renderCandidates([]);
+          statusIndicator.textContent = 'Draw to recognize';
+        }
+      }
+    });
+
+    spaceBtn.addEventListener('mousedown', (e) => e.preventDefault());
+    spaceBtn.addEventListener('click', () => {
+      insertCharacter(' ', false);
+    });
+
+    backspaceBtn.addEventListener('mousedown', (e) => e.preventDefault());
+    backspaceBtn.addEventListener('click', () => {
+      const val = textOutputBox.value;
+      if (!val) return;
+
+      if (lastSelection.start !== null && lastSelection.end !== null && lastSelection.start !== lastSelection.end) {
+        const start = lastSelection.start;
+        const end = lastSelection.end;
+        textOutputBox.value = val.substring(0, start) + val.substring(end);
+        lastSelection.start = start;
+        lastSelection.end = start;
+      } else {
+        const chars = Array.from(val);
+        chars.pop();
+        textOutputBox.value = chars.join('');
+        lastSelection.start = textOutputBox.value.length;
+        lastSelection.end = textOutputBox.value.length;
+      }
+      textOutputBox.blur();
+      updateRomanization();
+    });
+
+    clearAllBtn.addEventListener('click', () => {
+      textOutputBox.value = '';
+      romajiOutputBox.value = '';
+      lastSelection.start = null;
+      lastSelection.end = null;
+      showToast('Text cleared');
+    });
+
+    function copyText(elem, label) {
+      if (!elem.value) {
+        showToast(`Nothing to copy in ${label}`);
+        return;
+      }
+      elem.select();
+      elem.setSelectionRange(0, 99999);
+      document.execCommand('copy');
+      window.getSelection()?.removeAllRanges();
+      showToast(`Copied ${label} to clipboard!`);
+    }
+
+    function showToast(msg) {
+      toastMessage.textContent = msg;
+      toast.classList.remove('hidden');
+      toast.classList.add('opacity-100');
+      setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 2200);
+    }
+
+    copyTextBtn.addEventListener('click', () => copyText(textOutputBox, CONFIGS[activeLang].name));
+    copyRomajiBtn.addEventListener('click', () => copyText(romajiOutputBox, 'Romanization'));
+
+    window.addEventListener('load', () => {
+      resizeCanvas();
+      switchLanguage('ja'); // Japanese is selected first
+      initKuroshiroJapanese();
+    });
+    window.addEventListener('resize', resizeCanvas);
+  </script>
+</body>
+</html>
