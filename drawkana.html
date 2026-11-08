@@ -15,6 +15,114 @@
   <script src="https://cdn.jsdelivr.net/npm/kuroshiro-analyzer-kuromoji@1.1.0/dist/kuroshiro-analyzer-kuromoji.min.js"></script>
 
   <style>
+    /* ==========================================================================
+       === CHECKPOINT 1 (CSS): Box 1 Furigana Overlay vs. Furifont Rollback ===
+       To revert to Furifont: uncomment the @font-face + .furifont-ja rules below
+       and remove the .box1-shared-metrics / #furigana-backdrop rules.
+       ========================================================================== */
+    /*
+    @font-face {
+      font-family: 'Furifont Sans';
+      src: local('Furifont Sans VF'),
+           local('Furifont Sans'),
+           url('https://furifont.antfu.me/fonts/FurifontSans-Regular.woff2') format('woff2');
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    #text-output-box.furifont-ja {
+      font-family: 'Furifont Sans', 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
+      line-height: 1.85;
+      padding-top: 0.9rem;
+      font-variant-ligatures: common-ligatures contextual;
+      font-feature-settings: "liga" 1, "rclt" 1, "ccmp" 1;
+    }
+    */
+
+    /* Shared typography metrics so #text-output-box and #furigana-backdrop align 1:1 */
+    .box1-shared-metrics {
+      font-family: 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', ui-monospace, SFMono-Regular, monospace;
+      font-size: 1.35rem;
+      font-weight: 500;
+      line-height: 2.15;
+      letter-spacing: 0.04em;
+      padding: 0.85rem 0.65rem 0.45rem 0.65rem;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      tab-size: 4;
+    }
+
+    /* When Japanese overlay mode is active, textarea text is transparent while caret stays visible */
+    #text-output-box.overlay-ja-active {
+      color: transparent;
+      caret-color: #1e293b;
+      background-color: transparent;
+    }
+
+    #text-output-box.overlay-ja-active::selection {
+      background-color: rgba(99, 102, 241, 0.22);
+      color: transparent;
+    }
+
+    /* Ruby styling inside backdrop: absolute <rt> prevents long furigana from shifting character width */
+    #furigana-backdrop ruby {
+      display: inline-block;
+      position: relative;
+      vertical-align: baseline;
+      line-height: 1;
+    }
+
+    #furigana-backdrop rt {
+      display: block;
+      position: absolute;
+      bottom: 104%;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.44em;
+      font-weight: 600;
+      line-height: 1.1;
+      color: #4f46e5;
+      white-space: nowrap;
+      letter-spacing: normal;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    #furigana-backdrop rp {
+      display: none;
+    }
+    /* === END CHECKPOINT 1 (CSS) === */
+
+    /* ==========================================================================
+       Aspect-Ratio Responsive Layout (Portrait vs. Landscape)
+       ========================================================================== */
+    .dual-boxes-grid {
+      display: grid;
+      gap: 0.75rem;
+      grid-template-columns: 1fr;
+    }
+
+    /* Landscape aspect ratio: keep Box 1 and Box 2 side by side */
+    @media (orientation: landscape) {
+      .dual-boxes-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .canvas-viewport {
+        height: clamp(145px, 32vh, 250px);
+      }
+    }
+
+    /* Portrait aspect ratio: stack Box 1 on top and Box 2 on bottom */
+    @media (orientation: portrait) {
+      .dual-boxes-grid {
+        grid-template-columns: 1fr;
+      }
+      .canvas-viewport {
+        height: clamp(175px, 26vh, 260px);
+      }
+    }
+
     /* Prevent default gestures on touch canvas */
     #drawing-canvas {
       touch-action: none;
@@ -61,45 +169,45 @@
 
   <!-- Header -->
   <header class="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-30">
-    <div class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div class="max-w-5xl mx-auto px-4 py-2.5 flex items-center justify-between">
       <div class="flex items-center space-x-3">
-        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white font-bold shadow-md shadow-indigo-200">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white font-bold shadow-md shadow-indigo-200">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
           </svg>
         </div>
         <div>
-          <h1 class="text-lg font-bold text-slate-900 leading-tight">Multilingual Handwriting Recognition</h1>
-          <p class="text-xs text-slate-500">Google Input Tools Handwriting with Real-time Romanization</p>
+          <h1 class="text-base sm:text-lg font-bold text-slate-900 leading-tight">Multilingual Handwriting Recognition</h1>
+          <p class="text-[11px] text-slate-500">Google Input Tools Handwriting with Real-time Romanization</p>
         </div>
       </div>
       
       <!-- Engine Status Badge -->
       <div id="status-badge" class="flex items-center text-xs font-medium px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
         <span class="w-2 h-2 rounded-full bg-amber-400 mr-2 animate-pulse"></span>
-        <span id="status-text">Initializing engines...</span>
+        <span id="status-text">Loading Kuromoji dict...</span>
       </div>
     </div>
 
     <!-- Language Navigation Tabs -->
-    <div class="max-w-4xl mx-auto px-4">
+    <div class="max-w-5xl mx-auto px-4">
       <nav class="flex space-x-2 border-b border-transparent -mb-px overflow-x-auto hide-scrollbar" id="lang-tabs">
-        <button data-lang="ja" class="lang-tab active-tab flex items-center space-x-2 py-2.5 px-4 text-sm font-semibold border-b-2 border-indigo-600 text-indigo-600 transition-colors">
+        <button data-lang="ja" class="lang-tab active-tab flex items-center space-x-2 py-2 px-3.5 text-sm font-semibold border-b-2 border-indigo-600 text-indigo-600 transition-colors">
           <span>🇯🇵</span>
           <span>Japanese</span>
           <span class="text-xs font-normal text-slate-400">(Kanji / Kana)</span>
         </button>
-        <button data-lang="zh" class="lang-tab flex items-center space-x-2 py-2.5 px-4 text-sm font-medium border-b-2 border-transparent text-slate-600 hover:text-indigo-600 hover:border-slate-300 transition-colors">
+        <button data-lang="zh" class="lang-tab flex items-center space-x-2 py-2 px-3.5 text-sm font-medium border-b-2 border-transparent text-slate-600 hover:text-indigo-600 hover:border-slate-300 transition-colors">
           <span>🇨🇳</span>
           <span>Chinese</span>
           <span class="text-xs font-normal text-slate-400">(Hanzi / Pinyin)</span>
         </button>
-        <button data-lang="ko" class="lang-tab flex items-center space-x-2 py-2.5 px-4 text-sm font-medium border-b-2 border-transparent text-slate-600 hover:text-indigo-600 hover:border-slate-300 transition-colors">
+        <button data-lang="ko" class="lang-tab flex items-center space-x-2 py-2 px-3.5 text-sm font-medium border-b-2 border-transparent text-slate-600 hover:text-indigo-600 hover:border-slate-300 transition-colors">
           <span>🇰🇷</span>
           <span>Korean</span>
           <span class="text-xs font-normal text-slate-400">(Hangul / RR)</span>
         </button>
-        <button data-lang="ru" class="lang-tab flex items-center space-x-2 py-2.5 px-4 text-sm font-medium border-b-2 border-transparent text-slate-600 hover:text-indigo-600 hover:border-slate-300 transition-colors">
+        <button data-lang="ru" class="lang-tab flex items-center space-x-2 py-2 px-3.5 text-sm font-medium border-b-2 border-transparent text-slate-600 hover:text-indigo-600 hover:border-slate-300 transition-colors">
           <span>🇷🇺</span>
           <span>Russian</span>
           <span class="text-xs font-normal text-slate-400">(Cyrillic / Latin)</span>
@@ -109,21 +217,21 @@
   </header>
 
   <!-- Main Workspace -->
-  <main class="max-w-4xl w-full mx-auto px-4 py-5 flex-1 flex flex-col space-y-4">
+  <main class="max-w-5xl w-full mx-auto px-4 py-3 flex-1 flex flex-col space-y-3">
 
     <!-- Top Drawing Workspace Card -->
-    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-col space-y-3">
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 sm:p-4 flex flex-col space-y-2.5">
       <div class="flex items-center justify-between">
         <div class="flex items-center space-x-2">
           <span class="text-xs uppercase font-bold tracking-wider text-slate-400" id="drawing-instructions">Draw Japanese Character</span>
           <span id="recognizing-indicator" class="hidden text-xs text-indigo-600 font-medium animate-pulse">Recognizing...</span>
         </div>
         <div class="flex items-center space-x-2">
-          <button id="btn-undo" class="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center space-x-1">
+          <button id="btn-undo" class="px-2.5 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center space-x-1">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
             <span>Undo Stroke</span>
           </button>
-          <button id="btn-clear-canvas" class="px-3 py-1.5 text-xs font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors flex items-center space-x-1">
+          <button id="btn-clear-canvas" class="px-2.5 py-1 text-xs font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors flex items-center space-x-1">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
             <span>Clear Canvas</span>
           </button>
@@ -131,57 +239,75 @@
       </div>
 
       <!-- Drawing Canvas Area -->
-      <div class="relative w-full h-64 sm:h-72 bg-slate-50/50 rounded-xl border border-slate-200 overflow-hidden flex items-center justify-center">
+      <div class="canvas-viewport relative w-full bg-slate-50/50 rounded-xl border border-slate-200 overflow-hidden flex items-center justify-center">
         <div id="grid-guide" class="absolute inset-0 cjk-grid pointer-events-none"></div>
         <canvas id="drawing-canvas" class="relative z-10 w-full h-full"></canvas>
       </div>
 
       <!-- Candidate Selection Strip -->
       <div>
-        <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5 flex justify-between items-center">
+        <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1 flex justify-between items-center">
           <span>Recognition Candidates</span>
           <span class="text-[10px] lowercase text-slate-400 font-normal">Click candidate to insert without focusing box</span>
         </div>
-        <div id="candidates-container" class="flex items-center space-x-2 overflow-x-auto p-1 min-h-[46px] bg-slate-50 border border-slate-200/80 rounded-xl hide-scrollbar">
+        <div id="candidates-container" class="flex items-center space-x-2 overflow-x-auto p-1 min-h-[42px] bg-slate-50 border border-slate-200/80 rounded-xl hide-scrollbar">
           <span class="text-xs text-slate-400 italic px-3">Draw a character on the canvas above...</span>
         </div>
       </div>
     </div>
 
-    <!-- Dual Textboxes Section -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
+    <!-- Dual Textboxes Section (Side-by-Side in Landscape, Stacked in Portrait, Shorter Vertically) -->
+    <div class="dual-boxes-grid">
       
       <!-- Box 1: Editable Character Input -->
-      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-col">
-        <div class="flex items-center justify-between mb-2">
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 flex flex-col">
+        <div class="flex items-center justify-between mb-1.5">
           <div class="flex items-center space-x-2">
             <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
             <label for="text-output-box" class="text-xs font-bold uppercase tracking-wider text-slate-600">
-              Box 1: Character Text <span class="font-normal lowercase text-slate-400">(Editable)</span>
+              Box 1: Character Text <span class="font-normal lowercase text-slate-400">(Editable · Synced Furigana)</span>
             </label>
           </div>
           <div class="flex items-center space-x-1">
-            <button id="btn-copy-box1" title="Copy Text" class="p-1.5 text-xs text-slate-600 hover:text-indigo-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center space-x-1">
+            <button id="btn-copy-box1" title="Copy Text" class="px-2 py-1 text-xs text-slate-600 hover:text-indigo-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center space-x-1">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
               <span>Copy</span>
             </button>
           </div>
         </div>
 
-        <textarea 
-          id="text-output-box" 
-          rows="4" 
-          placeholder="Characters will appear here as you tap candidates, or type directly..." 
-          class="w-full flex-1 p-3 text-2xl font-medium tracking-wide text-slate-800 bg-white border border-slate-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono leading-relaxed"
-        ></textarea>
+        <!-- ====================================================================
+             === CHECKPOINT 2 (HTML): Box 1 Furigana Backdrop Overlay Wrapper ===
+             Previous single-textarea markup (for rollback):
+             <textarea id="text-output-box" rows="2" lang="ja" placeholder="..."
+               class="furifont-ja w-full h-24 p-2.5 text-xl font-medium tracking-wide text-slate-800 bg-white border border-slate-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono leading-relaxed"></textarea>
+             ==================================================================== -->
+        <div class="relative w-full h-24 bg-white border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-all">
+          <!-- Synced Furigana Backdrop Layer -->
+          <div
+            id="furigana-backdrop"
+            aria-hidden="true"
+            class="box1-shared-metrics absolute inset-0 w-full h-full text-slate-800 pointer-events-none overflow-y-auto select-none"
+          ></div>
+
+          <!-- Interactive Textarea Layer -->
+          <textarea 
+            id="text-output-box" 
+            rows="2" 
+            lang="ja"
+            placeholder="Characters will appear here as you tap candidates, or type directly..." 
+            class="box1-shared-metrics overlay-ja-active relative z-10 w-full h-full text-slate-800 bg-transparent border-0 resize-none focus:outline-none"
+          ></textarea>
+        </div>
+        <!-- === END CHECKPOINT 2 (HTML) === -->
 
         <!-- Quick Editing Toolbar -->
-        <div class="mt-3 flex items-center justify-between pt-2 border-t border-slate-100">
+        <div class="mt-2 flex items-center justify-between pt-1.5 border-t border-slate-100">
           <div class="flex items-center space-x-1.5">
-            <button id="btn-add-space" class="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
+            <button id="btn-add-space" class="px-2.5 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
               Space ␣
             </button>
-            <button id="btn-backspace" class="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
+            <button id="btn-backspace" class="px-2.5 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
               ⌫ Backspace
             </button>
           </div>
@@ -192,15 +318,15 @@
       </div>
 
       <!-- Box 2: Read-Only Romanization Output -->
-      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-col">
-        <div class="flex items-center justify-between mb-2">
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 flex flex-col">
+        <div class="flex items-center justify-between mb-1.5">
           <div class="flex items-center space-x-2">
             <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
             <label for="romanized-output-box" class="text-xs font-bold uppercase tracking-wider text-slate-600">
-              Box 2: <span id="romanization-label">Romaji</span> <span class="font-normal lowercase text-slate-400">(Read-Only)</span>
+              Box 2: <span id="romanization-label">Romaji (Hepburn)</span> <span class="font-normal lowercase text-slate-400">(Read-Only)</span>
             </label>
           </div>
-          <button id="btn-copy-box2" title="Copy Transliteration" class="p-1.5 text-xs text-slate-600 hover:text-emerald-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center space-x-1">
+          <button id="btn-copy-box2" title="Copy Transliteration" class="px-2 py-1 text-xs text-slate-600 hover:text-emerald-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center space-x-1">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
             <span>Copy</span>
           </button>
@@ -208,14 +334,14 @@
 
         <textarea 
           id="romanized-output-box" 
-          rows="4" 
+          rows="2" 
           readonly 
           placeholder="Romanized pronunciation will appear here..." 
-          class="w-full flex-1 p-3 text-2xl font-normal text-slate-700 bg-slate-50/70 border border-slate-200 rounded-xl resize-none focus:outline-none cursor-default font-mono leading-relaxed"
+          class="box1-shared-metrics w-full h-24 text-slate-700 bg-slate-50/70 border border-slate-200 rounded-xl resize-none focus:outline-none cursor-default"
         ></textarea>
 
-        <div class="mt-3 flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] text-slate-400">
-          <span id="translit-mode-description">Hiragana, Katakana &amp; Kanji to Romaji</span>
+        <div class="mt-2 flex items-center justify-between pt-1.5 border-t border-slate-100 text-[11px] text-slate-400">
+          <span id="translit-mode-description">Hiragana, Katakana &amp; Joyo Kanji to Romaji</span>
           <span id="char-count">0 chars</span>
         </div>
       </div>
@@ -281,6 +407,7 @@
     const ctx = canvas.getContext('2d');
     const candidatesContainer = document.getElementById('candidates-container');
     const textOutputBox = document.getElementById('text-output-box');
+    const furiganaBackdrop = document.getElementById('furigana-backdrop');
     const romanizedOutputBox = document.getElementById('romanized-output-box');
     const statusBadge = document.getElementById('status-badge');
     const statusText = document.getElementById('status-text');
@@ -326,8 +453,12 @@
         if (stroke.x.length === 0) continue;
         ctx.beginPath();
         ctx.moveTo(stroke.x[0], stroke.y[0]);
-        for (let i = 1; i < stroke.x.length; i++) {
-          ctx.lineTo(stroke.x[i], stroke.y[i]);
+        if (stroke.x.length === 1) {
+          ctx.lineTo(stroke.x[0] + 0.01, stroke.y[0]);
+        } else {
+          for (let i = 1; i < stroke.x.length; i++) {
+            ctx.lineTo(stroke.x[i], stroke.y[i]);
+          }
         }
         ctx.stroke();
       }
@@ -354,6 +485,8 @@
       
       ctx.beginPath();
       ctx.moveTo(x, y);
+      ctx.lineTo(x + 0.01, y);
+      ctx.stroke();
     }
 
     function draw(e) {
@@ -475,13 +608,12 @@
         return;
       }
 
-      candidates.forEach((cand, idx) => {
+      candidates.forEach((cand) => {
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = 'candidate-btn px-4 py-2 bg-white hover:bg-indigo-50 active:bg-indigo-100 text-slate-800 hover:text-indigo-600 font-medium text-lg border border-slate-200 rounded-xl transition-all shadow-sm flex items-center justify-center min-w-[48px] select-none';
+        btn.className = 'candidate-btn px-3.5 py-1.5 bg-white hover:bg-indigo-50 active:bg-indigo-100 text-slate-800 hover:text-indigo-600 font-medium text-lg border border-slate-200 rounded-xl transition-all shadow-sm flex items-center justify-center min-w-[44px] select-none';
         btn.textContent = cand;
         
-        // Prevent default on mousedown to stop focus jumping or highlighting Box 1
         btn.addEventListener('mousedown', (e) => {
           e.preventDefault();
         });
@@ -501,24 +633,21 @@
       const end = textOutputBox.selectionEnd ?? textOutputBox.value.length;
       const originalText = textOutputBox.value;
       
-      // Insert character cleanly
       textOutputBox.value = originalText.substring(0, start) + char + originalText.substring(end);
-      
-      // Ensure Box 1 does NOT retain visual focus or highlight
       textOutputBox.blur();
 
-      // Trigger transliteration
       updateRomanization();
     }
 
     /* ==========================================================================
-       Language Engine & Romanization Handlers
+       Language Engine & Romanization Handlers (Kuroshiro + Kuromoji)
        ========================================================================== */
     let kuroshiroInstance = null;
     let isKuroshiroReady = false;
 
-    // Built-in Kana romanization dictionary
+    // Built-in Kana romanization dictionary (Standard + Modern Extended Digraphs)
     const KANA_MAP = {
+      // Standard Hiragana
       'あ':'a','い':'i','う':'u','え':'e','お':'o',
       'か':'ka','き':'ki','く':'ku','け':'ke','こ':'ko',
       'さ':'sa','し':'shi','す':'su','せ':'se','そ':'so',
@@ -528,12 +657,15 @@
       'ま':'ma','み':'mi','む':'mu','め':'me','も':'mo',
       'や':'ya','ゆ':'yu','よ':'yo',
       'ら':'ra','り':'ri','る':'ru','れ':'re','ろ':'ro',
-      'わ':'wa','を':'wo','ん':'n',
+      'わ':'wa','ゐ':'wi','ゑ':'we','を':'wo','ん':'n',
       'が':'ga','ぎ':'gi','ぐ':'gu','げ':'ge','ご':'go',
       'ざ':'za','じ':'ji','ず':'zu','ぜ':'ze','ぞ':'zo',
       'だ':'da','ぢ':'ji','づ':'zu','で':'de','ど':'do',
       'ば':'ba','び':'bi','ぶ':'bu','べ':'be','ぼ':'bo',
       'ぱ':'pa','ぴ':'pi','ぷ':'pu','ぺ':'pe','ぽ':'po',
+      'ゔ':'vu',
+
+      // Standard Hiragana Digraphs (Youon)
       'きゃ':'kya','きゅ':'kyu','きょ':'kyo',
       'しゃ':'sha','しゅ':'shu','しょ':'sho',
       'ちゃ':'cha','ちゅ':'chu','ちょ':'cho',
@@ -543,8 +675,23 @@
       'りゃ':'rya','りゅ':'ryu','りょ':'ryo',
       'ぎゃ':'gya','ぎゅ':'gyu','ぎょ':'gyo',
       'じゃ':'ja','じゅ':'ju','じょ':'jo',
+      'ぢゃ':'ja','ぢゅ':'ju','ぢょ':'jo',
       'びゃ':'bya','びゅ':'byu','びょ':'byo',
       'ぴゃ':'pya','ぴゅ':'pyu','ぴょ':'pyo',
+
+      // Extended Hiragana Digraphs
+      'ふぁ':'fa','ふぃ':'fi','ふぇ':'fe','ふぉ':'fo','ふゃ':'fya','ふゅ':'fyu','ふょ':'fyo',
+      'てぃ':'ti','でぃ':'di','とぅ':'tu','どぅ':'du','てゅ':'tyu','でゅ':'dyu',
+      'しぇ':'she','じぇ':'je','ちぇ':'che',
+      'うぃ':'wi','うぇ':'we','うぉ':'wo','いぇ':'ye',
+      'ゔぁ':'va','ゔぃ':'vi','ゔぇ':'ve','ゔぉ':'vo','ゔゃ':'vya','ゔゅ':'vyu','ゔょ':'vyo',
+      'つぁ':'tsa','つぃ':'tsi','つぇ':'tse','つぉ':'tso',
+      'くぁ':'kwa','くぃ':'kwi','くぇ':'kwe','くぉ':'kwo','ぐぁ':'gwa',
+
+      // Small Hiragana Standalone Fallbacks
+      'ぁ':'a','ぃ':'i','ぅ':'u','ぇ':'e','ぉ':'o','ゃ':'ya','ゅ':'yu','ょ':'yo','ゎ':'wa',
+
+      // Standard Katakana
       'ア':'a','イ':'i','ウ':'u','エ':'e','オ':'o',
       'カ':'ka','キ':'ki','ク':'ku','ケ':'ke','コ':'ko',
       'サ':'sa','シ':'shi','ス':'su','セ':'se','ソ':'so',
@@ -554,12 +701,15 @@
       'マ':'ma','ミ':'mi','ム':'mu','メ':'me','モ':'mo',
       'ヤ':'ya','ユ':'yu','ヨ':'yo',
       'ラ':'ra','リ':'ri','ル':'ru','レ':'re','ロ':'ro',
-      'ワ':'wa','ヲ':'wo','ン':'n',
+      'ワ':'wa','ヰ':'wi','ヱ':'we','ヲ':'wo','ン':'n',
       'ガ':'ga','ギ':'gi','グ':'gu','ゲ':'ge','ゴ':'go',
       'ザ':'za','ジ':'ji','ズ':'zu','ゼ':'ze','ゾ':'zo',
       'ダ':'da','ヂ':'ji','ヅ':'zu','デ':'de','ド':'do',
       'バ':'ba','ビ':'bi','ブ':'bu','ベ':'be','ボ':'bo',
       'パ':'pa','ピ':'pi','プ':'pu','ペ':'pe','ポ':'po',
+      'ヴ':'vu',
+
+      // Standard Katakana Digraphs (Youon)
       'キャ':'kya','キュ':'kyu','キョ':'kyo',
       'シャ':'sha','シュ':'shu','ショ':'sho',
       'チャ':'cha','チュ':'chu','チョ':'cho',
@@ -569,50 +719,140 @@
       'リャ':'rya','リュ':'ryu','リョ':'ryo',
       'ギャ':'gya','ギュ':'gyu','ギョ':'gyo',
       'ジャ':'ja','ジュ':'ju','ジョ':'jo',
+      'ヂャ':'ja','ヂュ':'ju','ヂョ':'jo',
       'ビャ':'bya','ビュ':'byu','ビョ':'byo',
       'ピャ':'pya','ピュ':'pyu','ピョ':'pyo',
+
+      // Modern Extended Katakana Digraphs
+      'ファ':'fa','フィ':'fi','フェ':'fe','フォ':'fo','フャ':'fya','フュ':'fyu','フョ':'fyo',
+      'ティ':'ti','ディ':'di','トゥ':'tu','ドゥ':'du','テュ':'tyu','デュ':'dyu',
+      'シェ':'she','ジェ':'je','チェ':'che','スィ':'si','ズィ':'zi',
+      'ウィ':'wi','ウェ':'we','ウォ':'wo','イェ':'ye',
+      'ヴァ':'va','ヴィ':'vi','ヴェ':'ve','ヴォ':'vo','ヴャ':'vya','ヴュ':'vyu','ヴョ':'vyo',
+      'ツァ':'tsa','ツィ':'tsi','ツェ':'tse','ツォ':'tso',
+      'クァ':'kwa','クィ':'kwi','クェ':'kwe','クォ':'kwo',
+      'グァ':'gwa','グィ':'gwi','グェ':'gwe','グォ':'gwo',
+
+      // Small Katakana Standalone Fallbacks
+      'ァ':'a','ィ':'i','ゥ':'u','ェ':'e','ォ':'o','ャ':'ya','ュ':'yu','ョ':'yo','ヮ':'wa','ヵ':'ka','ヶ':'ke',
       'ー': '-'
     };
 
-    // Frequent Kanji fallback dictionary
+    // Instant fallback dictionary (with both Romaji and Hiragana for fallback Ruby)
     const KANJI_FALLBACK = {
-      '日本':'nihon','東京':'toukyou','私':'watashi','俺':'ore','僕':'boku','人':'hito',
-      '学校':'gakkou','学生':'gakusei','先生':'sensei','大学':'daigaku','本':'hon',
-      '愛':'ai','友':'tomo','友達':'tomodachi','水':'mizu','火':'hi','金':'kane',
-      '木':'ki','土':'tsuchi','日':'hi','月':'tsuki','年':'toshi','時間':'jikan',
-      '食べる':'taberu','見る':'miru','聞く':'kiku','行く':'iku','来る':'kuru','何':'nani'
+      '日本': { romaji: 'nihon', kana: 'にほん' },
+      '東京': { romaji: 'toukyou', kana: 'とうきょう' },
+      '私': { romaji: 'watashi', kana: 'わたし' },
+      '俺': { romaji: 'ore', kana: 'おれ' },
+      '僕': { romaji: 'boku', kana: 'ぼく' },
+      '人': { romaji: 'hito', kana: 'ひと' },
+      '学校': { romaji: 'gakkou', kana: 'がっこう' },
+      '学生': { romaji: 'gakusei', kana: 'がくせい' },
+      '先生': { romaji: 'sensei', kana: 'せんせい' },
+      '大学': { romaji: 'daigaku', kana: 'だいがく' },
+      '本': { romaji: 'hon', kana: 'ほん' },
+      '愛': { romaji: 'ai', kana: 'あい' },
+      '友': { romaji: 'tomo', kana: 'とも' },
+      '友達': { romaji: 'tomodachi', kana: 'ともだち' },
+      '水': { romaji: 'mizu', kana: 'みず' },
+      '火': { romaji: 'hi', kana: 'ひ' },
+      '金': { romaji: 'kane', kana: 'かね' },
+      '木': { romaji: 'ki', kana: 'き' },
+      '土': { romaji: 'tsuchi', kana: 'つち' },
+      '日': { romaji: 'hi', kana: 'ひ' },
+      '月': { romaji: 'tsuki', kana: 'つき' },
+      '年': { romaji: 'toshi', kana: 'とし' },
+      '時間': { romaji: 'jikan', kana: 'じかん' },
+      '食べる': { romaji: 'taberu', kana: 'たべる' },
+      '見る': { romaji: 'miru', kana: 'みる' },
+      '聞く': { romaji: 'kiku', kana: 'きく' },
+      '行く': { romaji: 'iku', kana: 'いく' },
+      '来る': { romaji: 'kuru', kana: 'くる' },
+      '何': { romaji: 'nani', kana: 'なに' }
     };
 
-    // Robust Japanese Kuroshiro / Kuromoji Loader with 6s Timeout
+    /*
+     * Normalize Kuromoji .dat.gz XHR responses so CDNs that auto-decompress
+     * gzip streams still pass valid gzip bytes to Kuromoji's internal Gunzip.
+     */
+    let isDictLoaderPatched = false;
+    function ensureGzippedDictLoader() {
+      if (isDictLoaderPatched || typeof CompressionStream === 'undefined') return;
+      isDictLoaderPatched = true;
+
+      const origOpen = XMLHttpRequest.prototype.open;
+      const origSend = XMLHttpRequest.prototype.send;
+
+      XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+        this._kuromojiUrl = typeof url === 'string' && url.endsWith('.dat.gz') ? url : null;
+        return origOpen.call(this, method, url, ...rest);
+      };
+
+      XMLHttpRequest.prototype.send = function (...args) {
+        if (!this._kuromojiUrl) {
+          return origSend.apply(this, args);
+        }
+
+        const xhr = this;
+        fetch(this._kuromojiUrl)
+          .then(async (res) => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            let buf = await res.arrayBuffer();
+            const bytes = new Uint8Array(buf);
+            const isGzip = bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+
+            if (!isGzip) {
+              const cs = new CompressionStream('gzip');
+              const writer = cs.writable.getWriter();
+              writer.write(bytes);
+              writer.close();
+              buf = await new Response(cs.readable).arrayBuffer();
+            }
+
+            Object.defineProperty(xhr, 'status', { value: 200, configurable: true });
+            Object.defineProperty(xhr, 'response', { value: buf, configurable: true });
+            if (typeof xhr.onload === 'function') xhr.onload();
+          })
+          .catch((err) => {
+            if (typeof xhr.onerror === 'function') xhr.onerror(err);
+          });
+      };
+    }
+
+    // Robust Japanese Kuroshiro + Kuromoji Loader
     async function initKuroshiro() {
-      // 1. Check if libraries loaded into DOM
-      if (typeof Kuroshiro === 'undefined' || typeof KuromojiAnalyzer === 'undefined') {
+      ensureGzippedDictLoader();
+
+      const KuroshiroClass = typeof Kuroshiro !== 'undefined' ? (Kuroshiro.default || Kuroshiro) : null;
+      const KuromojiAnalyzerClass = typeof KuromojiAnalyzer !== 'undefined' ? (KuromojiAnalyzer.default || KuromojiAnalyzer) : null;
+
+      if (typeof KuroshiroClass !== 'function' || typeof KuromojiAnalyzerClass !== 'function') {
         setEngineStatus('ready-fallback', 'Ready (Built-in Mode)');
         return;
       }
 
-      // Try multiple CDN dictionary paths with timeout
       const cdnDictPaths = [
         "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/",
-        "https://unpkg.com/kuromoji@0.1.2/dict/"
+        "https://unpkg.com/kuromoji@0.1.2/dict/",
+        "https://cdn.jsdelivr.net/npm/kuromoji-fix-dict@0.1.2/dict/"
       ];
 
       for (const dictPath of cdnDictPaths) {
         try {
           const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Dictionary load timeout')), 6000)
+            setTimeout(() => reject(new Error('Dictionary load timeout')), 15000)
           );
 
           const loadPromise = (async () => {
-            const ks = new Kuroshiro();
-            const analyzer = new KuromojiAnalyzer({ dictPath });
+            const ks = new KuroshiroClass();
+            const analyzer = new KuromojiAnalyzerClass({ dictPath });
             await ks.init(analyzer);
             return ks;
           })();
 
           kuroshiroInstance = await Promise.race([loadPromise, timeoutPromise]);
           isKuroshiroReady = true;
-          setEngineStatus('ready', 'Japanese Engine Ready');
+          setEngineStatus('ready', 'Kuroshiro + Kuromoji Ready');
           updateRomanization();
           return;
         } catch (e) {
@@ -620,7 +860,6 @@
         }
       }
 
-      // If online heavy Kuromoji dictionary fails or times out, fallback seamlessly
       setEngineStatus('ready-fallback', 'Ready (Built-in Mode)');
       updateRomanization();
     }
@@ -641,17 +880,23 @@
       }
     }
 
-    /* Fast Fallback Japanese Transliteration */
+    function escapeHtml(str) {
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    /* Fast Fallback Japanese Transliteration & Furigana (used only before Kuromoji finishes loading) */
     function fallbackJapaneseRomanize(str) {
       let res = '';
       let i = 0;
       while (i < str.length) {
-        // Multi-char kanji compound match
         let compoundFound = false;
         for (let len = 4; len >= 2; len--) {
           const sub = str.substr(i, len);
           if (KANJI_FALLBACK[sub]) {
-            res += (res && !res.endsWith(' ') ? ' ' : '') + KANJI_FALLBACK[sub] + ' ';
+            res += (res && !res.endsWith(' ') ? ' ' : '') + KANJI_FALLBACK[sub].romaji + ' ';
             i += len;
             compoundFound = true;
             break;
@@ -659,14 +904,12 @@
         }
         if (compoundFound) continue;
 
-        // Single kanji match
         if (KANJI_FALLBACK[str[i]]) {
-          res += (res && !res.endsWith(' ') ? ' ' : '') + KANJI_FALLBACK[str[i]] + ' ';
+          res += (res && !res.endsWith(' ') ? ' ' : '') + KANJI_FALLBACK[str[i]].romaji + ' ';
           i++;
           continue;
         }
 
-        // Sokuon (っ / ッ)
         if (str[i] === 'っ' || str[i] === 'ッ') {
           if (i + 1 < str.length) {
             const nextTwo = str.substr(i + 1, 2);
@@ -680,7 +923,6 @@
           }
         }
 
-        // Youon / Digraph (2-char Kana)
         const twoChar = str.substr(i, 2);
         if (KANA_MAP[twoChar]) {
           res += KANA_MAP[twoChar];
@@ -688,27 +930,113 @@
           continue;
         }
 
-        // 1-char Kana
         if (KANA_MAP[str[i]]) {
           res += KANA_MAP[str[i]];
           i++;
           continue;
         }
 
-        // Other character (Latin, punctuation, space)
         res += str[i];
         i++;
       }
       return res.replace(/\s+/g, ' ').trim();
     }
 
-    /* Korean Hangul Syllable Decomposition to Revised Romanization */
-    function romanizeKorean(str) {
-      const CHO = ["g","kk","n","d","tt","r","m","b","pp","s","ss","","j","jj","ch","k","t","p","h"];
-      const JUNG = ["a","ae","ya","yae","eo","e","yeo","ye","o","wa","wae","oe","yo","u","wo","we","wi","yu","eu","ui","i"];
-      const JONG = ["","g","kk","gs","n","nj","nh","d","l","lg","lm","lb","ls","lt","lp","lh","m","b","bs","s","ss","ng","j","ch","k","t","p","h"];
+    function fallbackJapaneseFuriganaHtml(str) {
+      let html = '';
+      let i = 0;
+      while (i < str.length) {
+        let compoundFound = false;
+        for (let len = 4; len >= 2; len--) {
+          const sub = str.substr(i, len);
+          if (KANJI_FALLBACK[sub]) {
+            html += `<ruby>${escapeHtml(sub)}<rt>${KANJI_FALLBACK[sub].kana}</rt></ruby>`;
+            i += len;
+            compoundFound = true;
+            break;
+          }
+        }
+        if (compoundFound) continue;
 
-      let result = "";
+        if (KANJI_FALLBACK[str[i]]) {
+          html += `<ruby>${escapeHtml(str[i])}<rt>${KANJI_FALLBACK[str[i]].kana}</rt></ruby>`;
+          i++;
+          continue;
+        }
+
+        html += escapeHtml(str[i]);
+        i++;
+      }
+      return html.endsWith('\n') ? html + '\u200b' : html;
+    }
+
+    /* ==========================================================================
+       Korean Hangul & Standalone Jamo to Revised Romanization (with Assimilation)
+       ========================================================================== */
+    const CHO_JAMO  = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
+    const JUNG_JAMO = ["ㅏ","ㅐ","ㅑ","ㅒ","ㅓ","ㅔ","ㅕ","ㅖ","ㅗ","ㅘ","ㅙ","ㅚ","ㅛ","ㅜ","ㅝ","ㅞ","ㅟ","ㅠ","ㅡ","ㅢ","ㅣ"];
+    const JONG_JAMO = ["","ㄱ","ㄲ","ㄳ","ㄴ","ㄵ","ㄶ","ㄷ","ㄹ","ㄺ","ㄻ","ㄼ","ㄽ","ㄾ","ㄿ","ㅀ","ㅁ","ㅂ","ㅄ","ㅅ","ㅆ","ㅇ","ㅈ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
+
+    const CHO_RR = {
+      'ㄱ':'g','ㄲ':'kk','ㄴ':'n','ㄷ':'d','ㄸ':'tt','ㄹ':'r','ㅁ':'m','ㅂ':'b','ㅃ':'pp',
+      'ㅅ':'s','ㅆ':'ss','ㅇ':'','ㅈ':'j','ㅉ':'jj','ㅊ':'ch','ㅋ':'k','ㅌ':'t','ㅍ':'p','ㅎ':'h'
+    };
+    const JUNG_RR = {
+      'ㅏ':'a','ㅐ':'ae','ㅑ':'ya','ㅒ':'yae','ㅓ':'eo','ㅔ':'e','ㅕ':'yeo','ㅖ':'ye',
+      'ㅗ':'o','ㅘ':'wa','ㅙ':'wae','ㅚ':'oe','ㅛ':'yo','ㅜ':'u','ㅝ':'wo','ㅞ':'we',
+      'ㅟ':'wi','ㅠ':'yu','ㅡ':'eu','ㅢ':'ui','ㅣ':'i'
+    };
+    const JONG_RR = {
+      '':'','ㄱ':'k','ㄲ':'k','ㄳ':'k','ㄴ':'n','ㄵ':'n','ㄶ':'n','ㄷ':'t',
+      'ㄹ':'l','ㄺ':'k','ㄻ':'m','ㄼ':'l','ㄽ':'l','ㄾ':'l','ㄿ':'p','ㅀ':'l',
+      'ㅁ':'m','ㅂ':'p','ㅄ':'p','ㅅ':'t','ㅆ':'t','ㅇ':'ng','ㅈ':'t','ㅊ':'t','ㅋ':'k','ㅌ':'t','ㅍ':'p','ㅎ':'t'
+    };
+
+    const STANDALONE_JAMO_MAP = {
+      'ㄱ':'g','ㄲ':'kk','ㄳ':'ks','ㄴ':'n','ㄵ':'nj','ㄶ':'nh','ㄷ':'d','ㄸ':'tt','ㄹ':'r',
+      'ㄺ':'lg','ㄻ':'lm','ㄼ':'lb','ㄽ':'ls','ㄾ':'lt','ㄿ':'lp','ㅀ':'lh','ㅁ':'m','ㅂ':'b',
+      'ㅃ':'pp','ㅄ':'bs','ㅅ':'s','ㅆ':'ss','ㅇ':'ng','ㅈ':'j','ㅉ':'jj','ㅊ':'ch','ㅋ':'k','ㅌ':'t','ㅍ':'p','ㅎ':'h',
+      'ㅏ':'a','ㅐ':'ae','ㅑ':'ya','ㅒ':'yae','ㅓ':'eo','ㅔ':'e','ㅕ':'yeo','ㅖ':'ye',
+      'ㅗ':'o','ㅘ':'wa','ㅙ':'wae','ㅚ':'oe','ㅛ':'yo','ㅜ':'u','ㅝ':'wo','ㅞ':'we',
+      'ㅟ':'wi','ㅠ':'yu','ㅡ':'eu','ㅢ':'ui','ㅣ':'i',
+      'ᄀ':'g','ᄁ':'kk','ᄂ':'n','ᄃ':'d','ᄄ':'tt','ᄅ':'r','ᄆ':'m','ᄇ':'b','ᄈ':'pp',
+      'ᄉ':'s','ᄊ':'ss','ᄋ':'ng','ᄌ':'j','ᄍ':'jj','ᄎ':'ch','ᄏ':'k','ᄐ':'t','ᄑ':'p','ᄒ':'h',
+      'ᅡ':'a','ᅢ':'ae','ᅣ':'ya','ᅤ':'yae','ᅥ':'eo','ᅦ':'e','ᅧ':'yeo','ᅨ':'ye',
+      'ᅩ':'o','ᅪ':'wa','ᅫ':'wae','ᅬ':'oe','ᅭ':'yo','ᅮ':'u','ᅯ':'wo','ᅰ':'we',
+      'ᅱ':'wi','ᅲ':'yu','ᅳ':'eu','ᅴ':'ui','ᅵ':'i',
+      'ᆨ':'k','ᆩ':'k','ᆪ':'k','ᆫ':'n','ᆬ':'n','ᆭ':'n','ᆮ':'t','ᆯ':'l','ᆰ':'k','ᆱ':'m',
+      'ᆲ':'l','ᆳ':'l','ᆴ':'l','ᆵ':'p','ᆶ':'l','ᆷ':'m','ᆸ':'p','ᆹ':'p','ᆺ':'t','ᆻ':'t',
+      'ᆼ':'ng','ᆽ':'t','ᆾ':'t','ᆿ':'k','ᇀ':'t','ᇁ':'p','ᇂ':'t'
+    };
+
+    const DOUBLE_JONG_SPLIT = {
+      'ㄳ': ['ㄱ', 'ㅅ'],
+      'ㄵ': ['ㄴ', 'ㅈ'],
+      'ㄶ': ['ㄴ', 'ㅇ'],
+      'ㄺ': ['ㄹ', 'ㄱ'],
+      'ㄻ': ['ㄹ', 'ㅁ'],
+      'ㄼ': ['ㄹ', 'ㅂ'],
+      'ㄽ': ['ㄹ', 'ㅅ'],
+      'ㄾ': ['ㄹ', 'ㅌ'],
+      'ㄿ': ['ㄹ', 'ㅍ'],
+      'ㅀ': ['ㄹ', 'ㅇ'],
+      'ㅄ': ['ㅂ', 'ㅅ']
+    };
+
+    function neutralizeCoda(jong) {
+      if (!jong) return '';
+      if (['ㄱ','ㄲ','ㅋ','ㄳ','ㄺ'].includes(jong)) return 'ㄱ';
+      if (['ㄴ','ㄵ','ㄶ'].includes(jong)) return 'ㄴ';
+      if (['ㄷ','ㅅ','ㅆ','ㅈ','ㅊ','ㅌ','ㅎ'].includes(jong)) return 'ㄷ';
+      if (['ㄹ','ㄼ','ㄽ','ㄾ','ㅀ'].includes(jong)) return 'ㄹ';
+      if (['ㅁ','ㄻ'].includes(jong)) return 'ㅁ';
+      if (['ㅂ','ㅍ','ㄿ','ㅄ'].includes(jong)) return 'ㅂ';
+      if (jong === 'ㅇ') return 'ㅇ';
+      return jong;
+    }
+
+    function romanizeKorean(str) {
+      const tokens = [];
       for (let i = 0; i < str.length; i++) {
         const code = str.charCodeAt(i);
         if (code >= 0xAC00 && code <= 0xD7A3) {
@@ -716,11 +1044,117 @@
           const choIdx = Math.floor(syl / (21 * 28));
           const jungIdx = Math.floor((syl % (21 * 28)) / 28);
           const jongIdx = syl % 28;
-          result += CHO[choIdx] + JUNG[jungIdx] + JONG[jongIdx];
+          tokens.push({
+            isSyl: true,
+            cho: CHO_JAMO[choIdx],
+            jung: JUNG_JAMO[jungIdx],
+            jong: JONG_JAMO[jongIdx]
+          });
         } else {
-          result += str[i];
+          tokens.push({
+            isSyl: false,
+            char: str[i]
+          });
         }
       }
+
+      for (let i = 0; i < tokens.length; i++) {
+        const curr = tokens[i];
+        if (!curr.isSyl) continue;
+
+        const next = (i + 1 < tokens.length && tokens[i + 1].isSyl) ? tokens[i + 1] : null;
+        if (!next || !curr.jong) {
+          curr.jong = neutralizeCoda(curr.jong);
+          continue;
+        }
+
+        // Rule A: Palatalization (구개음화)
+        if (next.cho === 'ㅇ' && (next.jung === 'ㅣ' || next.jung === 'ㅕ')) {
+          if (curr.jong === 'ㄷ') { curr.jong = ''; next.cho = 'ㅈ'; continue; }
+          if (curr.jong === 'ㅌ') { curr.jong = ''; next.cho = 'ㅊ'; continue; }
+          if (curr.jong === 'ㄾ') { curr.jong = 'ㄹ'; next.cho = 'ㅊ'; continue; }
+        }
+        if (curr.jong === 'ㄷ' && next.cho === 'ㅎ' && next.jung === 'ㅣ') {
+          curr.jong = '';
+          next.cho = 'ㅊ';
+          continue;
+        }
+
+        // Rule B: Liaison / Resyllabification before vowel ('ㅇ')
+        if (next.cho === 'ㅇ') {
+          if (DOUBLE_JONG_SPLIT[curr.jong]) {
+            const [rem, moved] = DOUBLE_JONG_SPLIT[curr.jong];
+            curr.jong = rem;
+            next.cho = moved;
+          } else if (curr.jong === 'ㅎ') {
+            curr.jong = '';
+          } else if (curr.jong !== 'ㅇ') {
+            next.cho = curr.jong;
+            curr.jong = '';
+          }
+          continue;
+        }
+
+        // Rule C: Aspiration / 'ㅎ' Coalescence (격음화)
+        const ASPIRATION_TARGET = { 'ㄱ': 'ㅋ', 'ㄷ': 'ㅌ', 'ㅂ': 'ㅍ', 'ㅈ': 'ㅊ' };
+        if (['ㅎ', 'ㄶ', 'ㅀ'].includes(curr.jong) && ASPIRATION_TARGET[next.cho]) {
+          next.cho = ASPIRATION_TARGET[next.cho];
+          curr.jong = curr.jong === 'ㄶ' ? 'ㄴ' : (curr.jong === 'ㅀ' ? 'ㄹ' : '');
+        } else if (['ㅎ', 'ㄶ', 'ㅀ'].includes(curr.jong) && next.cho === 'ㅅ') {
+          next.cho = 'ㅆ';
+          curr.jong = curr.jong === 'ㄶ' ? 'ㄴ' : (curr.jong === 'ㅀ' ? 'ㄹ' : '');
+        } else if (['ㅎ', 'ㄶ', 'ㅀ'].includes(curr.jong) && next.cho === 'ㄴ') {
+          curr.jong = curr.jong === 'ㄶ' ? 'ㄴ' : (curr.jong === 'ㅀ' ? 'ㄹ' : 'ㄴ');
+        } else if (next.cho === 'ㅎ') {
+          const normJong = neutralizeCoda(curr.jong);
+          if (['ㄷ', 'ㅈ', 'ㅊ', 'ㅌ'].includes(curr.jong)) {
+            curr.jong = '';
+            next.cho = curr.jong === 'ㄷ' || curr.jong === 'ㅌ' ? 'ㅌ' : 'ㅊ';
+            continue;
+          } else if (normJong === 'ㄱ' || normJong === 'ㅂ') {
+            curr.jong = normJong;
+          }
+        }
+
+        curr.jong = neutralizeCoda(curr.jong);
+
+        // Rule D: Nasalization of 'ㄹ' after non-'ㄹ' consonants
+        if (next.cho === 'ㄹ' && ['ㄱ', 'ㄷ', 'ㅂ', 'ㅁ', 'ㅇ'].includes(curr.jong)) {
+          next.cho = 'ㄴ';
+        }
+
+        // Rule E: Obstruent Nasalization before 'ㄴ' or 'ㅁ'
+        if (next.cho === 'ㄴ' || next.cho === 'ㅁ') {
+          if (curr.jong === 'ㄱ') curr.jong = 'ㅇ';
+          else if (curr.jong === 'ㄷ') curr.jong = 'ㄴ';
+          else if (curr.jong === 'ㅂ') curr.jong = 'ㅁ';
+        }
+
+        // Rule F: Liquidization of 'ㄴ'+'ㄹ' or 'ㄹ'+'ㄴ' -> 'ㄹ'+'ㄹ'
+        if ((curr.jong === 'ㄴ' && next.cho === 'ㄹ') || (curr.jong === 'ㄹ' && next.cho === 'ㄴ')) {
+          curr.jong = 'ㄹ';
+          next.cho = 'ㄹ';
+        }
+      }
+
+      let result = '';
+      for (let i = 0; i < tokens.length; i++) {
+        const tok = tokens[i];
+        if (!tok.isSyl) {
+          result += STANDALONE_JAMO_MAP[tok.char] !== undefined ? STANDALONE_JAMO_MAP[tok.char] : tok.char;
+          continue;
+        }
+
+        const prev = (i > 0 && tokens[i - 1].isSyl) ? tokens[i - 1] : null;
+        const choRom = (tok.cho === 'ㄹ' && prev && prev.jong === 'ㄹ')
+          ? 'l'
+          : (CHO_RR[tok.cho] ?? '');
+        const jungRom = JUNG_RR[tok.jung] ?? '';
+        const jongRom = JONG_RR[tok.jong] ?? '';
+
+        result += choRom + jungRom + jongRom;
+      }
+
       return result;
     }
 
@@ -750,35 +1184,87 @@
       return str;
     }
 
-    /* Core Dispatcher */
+    /* ==========================================================================
+       === CHECKPOINT 3 (JS): Single-Source-of-Truth Furigana + Romaji Sync ===
+       Both #furigana-backdrop (Box 1) and #romanized-output-box (Box 2) are
+       populated from the same Kuroshiro + Kuromoji conversion pass.
+       ========================================================================== */
+    let currentConversionId = 0;
+
+    function syncBackdropScroll() {
+      furiganaBackdrop.scrollTop = textOutputBox.scrollTop;
+      furiganaBackdrop.scrollLeft = textOutputBox.scrollLeft;
+    }
+
+    textOutputBox.addEventListener('scroll', syncBackdropScroll);
+
     async function updateRomanization() {
       const text = textOutputBox.value;
+      const conversionId = ++currentConversionId;
       charCount.textContent = `${text.length} char${text.length === 1 ? '' : 's'}`;
 
-      if (!text.trim()) {
+      if (!text) {
+        furiganaBackdrop.innerHTML = '';
         romanizedOutputBox.value = '';
         return;
       }
 
       if (currentLang === 'ja') {
+        // Immediate synchronous render so typed characters appear with 0ms delay
+        furiganaBackdrop.innerHTML = fallbackJapaneseFuriganaHtml(text);
+        syncBackdropScroll();
+
+        if (!text.trim()) {
+          romanizedOutputBox.value = '';
+          return;
+        }
+
         if (isKuroshiroReady && kuroshiroInstance) {
           try {
-            const romaji = await kuroshiroInstance.convert(text, { to: 'romaji', mode: 'spaced', romajiSystem: 'hepburn' });
+            const safeText = escapeHtml(text);
+            const [furiganaHtml, romaji] = await Promise.all([
+              kuroshiroInstance.convert(safeText, {
+                to: 'hiragana',
+                mode: 'furigana'
+              }),
+              kuroshiroInstance.convert(text, {
+                to: 'romaji',
+                mode: 'spaced',
+                romajiSystem: 'hepburn'
+              })
+            ]);
+
+            // Ignore stale async results if the user typed again while converting
+            if (conversionId !== currentConversionId || currentLang !== 'ja') return;
+
+            furiganaBackdrop.innerHTML = furiganaHtml.endsWith('\n')
+              ? furiganaHtml + '\u200b'
+              : furiganaHtml;
             romanizedOutputBox.value = romaji;
+            syncBackdropScroll();
             return;
           } catch (e) {
-            console.warn("Kuroshiro error, running fallback:", e);
+            console.warn("Kuroshiro conversion error, running fallback:", e);
           }
         }
+
         romanizedOutputBox.value = fallbackJapaneseRomanize(text);
-      } else if (currentLang === 'zh') {
-        romanizedOutputBox.value = romanizeChinese(text);
-      } else if (currentLang === 'ko') {
-        romanizedOutputBox.value = romanizeKorean(text);
-      } else if (currentLang === 'ru') {
-        romanizedOutputBox.value = romanizeRussian(text);
+      } else {
+        furiganaBackdrop.innerHTML = '';
+        if (!text.trim()) {
+          romanizedOutputBox.value = '';
+          return;
+        }
+        if (currentLang === 'zh') {
+          romanizedOutputBox.value = romanizeChinese(text);
+        } else if (currentLang === 'ko') {
+          romanizedOutputBox.value = romanizeKorean(text);
+        } else if (currentLang === 'ru') {
+          romanizedOutputBox.value = romanizeRussian(text);
+        }
       }
     }
+    /* === END CHECKPOINT 3 (JS) === */
 
     /* Listen to manual edits in Box 1 */
     textOutputBox.addEventListener('input', () => {
@@ -807,13 +1293,22 @@
         romanizationLabel.textContent = langConfig.romajiName;
         translitDesc.textContent = langConfig.desc;
 
+        // Toggle Japanese Furigana Backdrop Overlay on Box 1 ONLY when Japanese is active
+        textOutputBox.setAttribute('lang', currentLang);
+        if (currentLang === 'ja') {
+          textOutputBox.classList.add('overlay-ja-active');
+          furiganaBackdrop.classList.remove('hidden');
+        } else {
+          textOutputBox.classList.remove('overlay-ja-active');
+          furiganaBackdrop.classList.add('hidden');
+        }
+
         if (langConfig.guideType === 'cyrillic') {
           gridGuide.className = 'absolute inset-0 cyrillic-grid pointer-events-none';
         } else {
           gridGuide.className = 'absolute inset-0 cjk-grid pointer-events-none';
         }
 
-        // Reset canvas and update current text romanization for new language
         clearCanvas();
         updateRomanization();
       });
@@ -840,6 +1335,7 @@
 
     document.getElementById('btn-clear-text').addEventListener('click', () => {
       textOutputBox.value = '';
+      furiganaBackdrop.innerHTML = '';
       romanizedOutputBox.value = '';
       textOutputBox.blur();
       charCount.textContent = '0 chars';
