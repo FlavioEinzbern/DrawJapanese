@@ -127,7 +127,7 @@
       align-items: stretch;
     }
 
-    /* Landscape aspect ratio: keep Box 1 and Box 2 side by side */
+    /* Landscape aspect ratio: UNCHANGED — keep Box 1 and Box 2 side by side */
     @media (orientation: landscape) {
       .dual-boxes-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -137,13 +137,67 @@
       }
     }
 
-    /* Portrait aspect ratio: stack Box 1 on top and Box 2 on bottom */
+    /* Portrait aspect ratio: stack Box 1 & Box 2 and fit canvas + both boxes on screen without scrolling */
     @media (orientation: portrait) {
-      .dual-boxes-grid {
-        grid-template-columns: 1fr;
+      body {
+        min-height: 100dvh;
+      }
+      main {
+        padding-top: 0.35rem !important;
+        padding-bottom: 0.35rem !important;
+      }
+      main > * + * {
+        margin-top: 0.35rem !important;
+      }
+      .workspace-card {
+        padding: 0.5rem 0.65rem !important;
+      }
+      .workspace-card > * + * {
+        margin-top: 0.35rem !important;
       }
       .canvas-viewport {
-        height: clamp(175px, 28vh, 260px);
+        height: clamp(105px, 22dvh, 195px);
+      }
+      .candidate-header {
+        margin-bottom: 0.15rem !important;
+      }
+      #candidates-container {
+        min-height: 34px !important;
+        padding: 0.15rem !important;
+      }
+      .candidate-btn {
+        padding: 0.15rem 0.6rem !important;
+        font-size: 0.95rem !important;
+        min-width: 36px !important;
+        border-radius: 0.6rem !important;
+      }
+      .dual-boxes-grid {
+        grid-template-columns: 1fr;
+        gap: 0.35rem;
+      }
+      .box-card {
+        padding: 0.45rem 0.65rem !important;
+      }
+      .box-card-header {
+        margin-bottom: 0.2rem !important;
+      }
+      .box1-shared-metrics {
+        font-size: 1.05rem;
+        line-height: 1.65;
+        padding: 0.4rem 0.5rem 0.15rem 0.5rem;
+      }
+      #furigana-backdrop rt {
+        bottom: 96%;
+        font-size: 0.42em;
+      }
+      .auto-grow-box {
+        min-height: 4rem; /* 64px: fits 2 lines in portrait without scrolling */
+        height: 4rem;
+      }
+      .box-footer {
+        margin-top: 0.25rem !important;
+        padding-top: 0.2rem !important;
+        min-height: 22px !important;
       }
     }
 
@@ -231,7 +285,7 @@
   <main class="max-w-5xl w-full mx-auto px-4 py-3 flex-1 flex flex-col space-y-3">
 
     <!-- Top Drawing Workspace Card -->
-    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 sm:p-4 flex flex-col space-y-2.5">
+    <div class="workspace-card bg-white rounded-2xl border border-slate-200 shadow-sm p-3 sm:p-4 flex flex-col space-y-2.5">
       <div class="flex items-center justify-between">
         <div class="flex items-center space-x-2">
           <span class="text-xs uppercase font-bold tracking-wider text-slate-400" id="drawing-instructions">Draw Japanese Character</span>
@@ -259,7 +313,7 @@
 
       <!-- Candidate Selection Strip -->
       <div>
-        <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1 flex justify-between items-center">
+        <div class="candidate-header text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1 flex justify-between items-center">
           <span>Recognition Candidates</span>
           <span class="text-[10px] lowercase text-slate-400 font-normal">Click candidate to insert without focusing box</span>
         </div>
@@ -273,9 +327,9 @@
     <div class="dual-boxes-grid">
       
       <!-- Box 1: Editable Character Input -->
-      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 flex flex-col justify-between">
+      <div class="box-card bg-white rounded-2xl border border-slate-200 shadow-sm p-3 flex flex-col justify-between">
         <div>
-          <div class="flex items-center justify-between mb-1.5">
+          <div class="box-card-header flex items-center justify-between mb-1.5">
             <div class="flex items-center space-x-2">
               <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
               <label for="text-output-box" class="text-xs font-bold uppercase tracking-wider text-slate-600">
@@ -314,7 +368,7 @@
         </div>
 
         <!-- Quick Editing Toolbar (Matched height with Box 2 footer) -->
-        <div class="mt-2 flex items-center justify-between pt-1.5 border-t border-slate-100 min-h-[30px]">
+        <div class="box-footer mt-2 flex items-center justify-between pt-1.5 border-t border-slate-100 min-h-[30px]">
           <div class="flex items-center space-x-1.5">
             <button id="btn-add-space" class="px-2.5 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
               Space ␣
@@ -330,9 +384,9 @@
       </div>
 
       <!-- Box 2: Read-Only Romanization Output -->
-      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 flex flex-col justify-between">
+      <div class="box-card bg-white rounded-2xl border border-slate-200 shadow-sm p-3 flex flex-col justify-between">
         <div>
-          <div class="flex items-center justify-between mb-1.5">
+          <div class="box-card-header flex items-center justify-between mb-1.5">
             <div class="flex items-center space-x-2">
               <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
               <label for="romanized-output-box" class="text-xs font-bold uppercase tracking-wider text-slate-600">
@@ -354,7 +408,7 @@
           ></textarea>
         </div>
 
-        <div class="mt-2 flex items-center justify-between pt-1.5 border-t border-slate-100 text-[11px] text-slate-400 min-h-[30px]">
+        <div class="box-footer mt-2 flex items-center justify-between pt-1.5 border-t border-slate-100 text-[11px] text-slate-400 min-h-[30px]">
           <span id="translit-mode-description">Hiragana, Katakana & Joyo Kanji to Romaji</span>
           <span id="char-count">0 chars</span>
         </div>
@@ -1065,22 +1119,26 @@
       };
     }
 
-    const MIN_BOX_HEIGHT_PX = 86;
+    /* 64px (4rem) 2-line base height in portrait; 86px (5.4rem) in landscape */
+    function getMinBoxHeightPx() {
+      return window.matchMedia('(orientation: portrait)').matches ? 64 : 86;
+    }
 
     /* Always synchronize the vertical height of Box 1 and Box 2 */
     function autoResizeBoxes() {
-      textOutputBox.style.height = `${MIN_BOX_HEIGHT_PX}px`;
+      const minHeightPx = getMinBoxHeightPx();
+      textOutputBox.style.height = `${minHeightPx}px`;
       furiganaBackdrop.style.height = 'auto';
-      romanizedOutputBox.style.height = `${MIN_BOX_HEIGHT_PX}px`;
+      romanizedOutputBox.style.height = `${minHeightPx}px`;
 
       const box1ContentHeight = Math.max(
-        MIN_BOX_HEIGHT_PX,
+        minHeightPx,
         textOutputBox.scrollHeight,
         currentLang === 'ja' ? furiganaBackdrop.scrollHeight : 0
       );
 
       const box2ContentHeight = Math.max(
-        MIN_BOX_HEIGHT_PX,
+        minHeightPx,
         romanizedOutputBox.scrollHeight
       );
 
