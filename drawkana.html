@@ -53,6 +53,23 @@
       tab-size: 4;
     }
 
+    /* ==========================================================================
+       === CHECKPOINT 4 (CSS): Auto-Growing 2-Line Boxes Without Scrollbars ===
+       Previous fixed-height scrollbar setup:
+       #furigana-backdrop, #text-output-box, #romanized-output-box { height: 6rem; overflow-y: auto; }
+       ========================================================================== */
+    .auto-grow-box {
+      min-height: 5.4rem; /* Default height for 2 lines of text + furigana headroom */
+      height: 5.4rem;
+      overflow: hidden !important;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    .auto-grow-box::-webkit-scrollbar {
+      display: none;
+    }
+    /* === END CHECKPOINT 4 (CSS) === */
+
     /* When Japanese overlay mode is active, textarea text is transparent while caret stays visible */
     #text-output-box.overlay-ja-active {
       color: transparent;
@@ -101,6 +118,7 @@
       display: grid;
       gap: 0.75rem;
       grid-template-columns: 1fr;
+      align-items: start;
     }
 
     /* Landscape aspect ratio: keep Box 1 and Box 2 side by side */
@@ -256,7 +274,7 @@
       </div>
     </div>
 
-    <!-- Dual Textboxes Section (Side-by-Side in Landscape, Stacked in Portrait, Shorter Vertically) -->
+    <!-- Dual Textboxes Section (Side-by-Side in Landscape, Stacked in Portrait, Auto-Growing from 2 Lines) -->
     <div class="dual-boxes-grid">
       
       <!-- Box 1: Editable Character Input -->
@@ -277,17 +295,19 @@
         </div>
 
         <!-- ====================================================================
-             === CHECKPOINT 2 (HTML): Box 1 Furigana Backdrop Overlay Wrapper ===
-             Previous single-textarea markup (for rollback):
-             <textarea id="text-output-box" rows="2" lang="ja" placeholder="..."
-               class="furifont-ja w-full h-24 p-2.5 text-xl font-medium tracking-wide text-slate-800 bg-white border border-slate-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono leading-relaxed"></textarea>
+             === CHECKPOINT 2 & 4 (HTML): Auto-Growing Box 1 Overlay Wrapper ===
+             Previous fixed-height h-24 markup (for rollback):
+             <div class="relative w-full h-24 bg-white border border-slate-200 rounded-xl overflow-hidden ...">
+               <div id="furigana-backdrop" class="box1-shared-metrics absolute inset-0 w-full h-full ... overflow-y-auto"></div>
+               <textarea id="text-output-box" rows="2" class="box1-shared-metrics overlay-ja-active relative z-10 w-full h-full ..."></textarea>
+             </div>
              ==================================================================== -->
-        <div class="relative w-full h-24 bg-white border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-all">
+        <div id="box1-wrapper" class="auto-grow-box relative w-full bg-white border border-slate-200 rounded-xl focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-colors">
           <!-- Synced Furigana Backdrop Layer -->
           <div
             id="furigana-backdrop"
             aria-hidden="true"
-            class="box1-shared-metrics absolute inset-0 w-full h-full text-slate-800 pointer-events-none overflow-y-auto select-none"
+            class="box1-shared-metrics auto-grow-box absolute inset-0 w-full text-slate-800 pointer-events-none select-none"
           ></div>
 
           <!-- Interactive Textarea Layer -->
@@ -296,10 +316,10 @@
             rows="2" 
             lang="ja"
             placeholder="Characters will appear here as you tap candidates, or type directly..." 
-            class="box1-shared-metrics overlay-ja-active relative z-10 w-full h-full text-slate-800 bg-transparent border-0 resize-none focus:outline-none"
+            class="box1-shared-metrics auto-grow-box overlay-ja-active relative z-10 w-full text-slate-800 bg-transparent border-0 resize-none focus:outline-none block"
           ></textarea>
         </div>
-        <!-- === END CHECKPOINT 2 (HTML) === -->
+        <!-- === END CHECKPOINT 2 & 4 (HTML) === -->
 
         <!-- Quick Editing Toolbar -->
         <div class="mt-2 flex items-center justify-between pt-1.5 border-t border-slate-100">
@@ -337,7 +357,7 @@
           rows="2" 
           readonly 
           placeholder="Romanized pronunciation will appear here..." 
-          class="box1-shared-metrics w-full h-24 text-slate-700 bg-slate-50/70 border border-slate-200 rounded-xl resize-none focus:outline-none cursor-default"
+          class="box1-shared-metrics auto-grow-box w-full text-slate-700 bg-slate-50/70 border border-slate-200 rounded-xl resize-none focus:outline-none cursor-default block"
         ></textarea>
 
         <div class="mt-2 flex items-center justify-between pt-1.5 border-t border-slate-100 text-[11px] text-slate-400">
@@ -406,6 +426,7 @@
     const canvas = document.getElementById('drawing-canvas');
     const ctx = canvas.getContext('2d');
     const candidatesContainer = document.getElementById('candidates-container');
+    const box1Wrapper = document.getElementById('box1-wrapper');
     const textOutputBox = document.getElementById('text-output-box');
     const furiganaBackdrop = document.getElementById('furigana-backdrop');
     const romanizedOutputBox = document.getElementById('romanized-output-box');
@@ -443,6 +464,7 @@
       ctx.strokeStyle = '#1e1b4b';
       
       redrawStrokes();
+      autoResizeBoxes();
     }
 
     function redrawStrokes() {
@@ -640,7 +662,7 @@
     }
 
     /* ==========================================================================
-       Language Engine & Romanization Handlers (Kuroshiro + Kuromoji)
+       Language Engine & Romanization Handlers (Kuroshiro + Kuromoji + kanjiapi.dev)
        ========================================================================== */
     let kuroshiroInstance = null;
     let isKuroshiroReady = false;
@@ -738,7 +760,7 @@
       'ー': '-'
     };
 
-    // Instant fallback dictionary (with both Romaji and Hiragana for fallback Ruby)
+    // Starter dictionary (instant 0ms lookup)
     const KANJI_FALLBACK = {
       '日本': { romaji: 'nihon', kana: 'にほん' },
       '東京': { romaji: 'toukyou', kana: 'とうきょう' },
@@ -771,25 +793,143 @@
       '何': { romaji: 'nani', kana: 'なに' }
     };
 
+    /* ==========================================================================
+       === CHECKPOINT 4 (JS): Fix A (GitHub Pages URL Fix) + Fix C (kanjiapi.dev)
+           + Auto-Growing Box Height (No Scrollbars) ===
+       Previous static-only KANJI_FALLBACK & un-repaired path.join URLs can be
+       restored by commenting out the url.replace line and fetchKanjiApiData().
+       ========================================================================== */
+
+    // Convert Katakana string (from kanjiapi.dev on_readings) to Hiragana
+    function katakanaToHiragana(str) {
+      return str.replace(/[\u30A1-\u30F6]/g, (ch) =>
+        String.fromCharCode(ch.charCodeAt(0) - 0x60)
+      );
+    }
+
+    // Convert pure Kana string to Hepburn Romaji using KANA_MAP
+    function kanaToRomajiString(str) {
+      let res = '';
+      let i = 0;
+      while (i < str.length) {
+        if (str[i] === 'っ' || str[i] === 'ッ') {
+          if (i + 1 < str.length) {
+            const nextTwo = str.substr(i + 1, 2);
+            const nextOne = str[i + 1];
+            const nextRomaji = KANA_MAP[nextTwo] || KANA_MAP[nextOne] || '';
+            if (nextRomaji) {
+              res += nextRomaji[0];
+              i++;
+              continue;
+            }
+          }
+        }
+        const twoChar = str.substr(i, 2);
+        if (KANA_MAP[twoChar]) {
+          res += KANA_MAP[twoChar];
+          i += 2;
+          continue;
+        }
+        if (KANA_MAP[str[i]]) {
+          res += KANA_MAP[str[i]];
+          i++;
+          continue;
+        }
+        res += str[i];
+        i++;
+      }
+      return res;
+    }
+
+    // In-memory cache for kanjiapi.dev responses
+    const KANJI_API_CACHE = {};
+    const KANJI_REGEX = /[\u4E00-\u9FAF\u3400-\u4DBF]/;
+
+    async function fetchKanjiApiData(char) {
+      if (KANJI_API_CACHE[char]) return KANJI_API_CACHE[char];
+      try {
+        const res = await fetch(`https://kanjiapi.dev/v1/kanji/${encodeURIComponent(char)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        const kunList = (data.kun_readings || []).map(r => r.replace(/^-|-$/g, ''));
+        const onList = (data.on_readings || []).map(r => katakanaToHiragana(r.replace(/^-|-$/g, '')));
+
+        // Separate okurigana kun readings (e.g. "た.べる") from standalone kun readings
+        const okuriRules = [];
+        let standaloneKun = null;
+
+        for (const kun of kunList) {
+          if (kun.includes('.')) {
+            const [stem, okuri] = kun.split('.');
+            if (stem && okuri) {
+              okuriRules.push({ stem, okuri });
+            }
+          } else if (!standaloneKun && kun) {
+            standaloneKun = kun;
+          }
+        }
+
+        // Primary reading when standalone: standalone kun -> first on reading -> first kun stem
+        const primaryKana = standaloneKun
+          || onList[0]
+          || (okuriRules[0] ? okuriRules[0].stem : '')
+          || (data.name_readings && data.name_readings[0])
+          || '';
+
+        const entry = {
+          kana: primaryKana,
+          romaji: kanaToRomajiString(primaryKana),
+          onKana: onList[0] || primaryKana,
+          onRomaji: kanaToRomajiString(onList[0] || primaryKana),
+          okuriRules
+        };
+
+        KANJI_API_CACHE[char] = entry;
+        return entry;
+      } catch (e) {
+        console.warn(`kanjiapi.dev lookup failed for ${char}:`, e.message);
+        return null;
+      }
+    }
+
+    // Ensure all Kanji in `str` are cached in KANJI_API_CACHE
+    async function ensureKanjiReadingsLoaded(str) {
+      const missing = [];
+      for (const ch of str) {
+        if (KANJI_REGEX.test(ch) && !KANJI_API_CACHE[ch]) {
+          missing.push(ch);
+        }
+      }
+      if (missing.length > 0) {
+        const unique = [...new Set(missing)];
+        await Promise.all(unique.map(ch => fetchKanjiApiData(ch)));
+      }
+    }
+
     /*
-     * Normalize Kuromoji .dat.gz XHR responses so CDNs that auto-decompress
-     * gzip streams still pass valid gzip bytes to Kuromoji's internal Gunzip.
+     * Fix A: Normalize Kuromoji .dat.gz XHR responses AND repair kuromoji's
+     * mangled `path.join()` URLs ("https:/cdn..." -> "https://cdn...") on GitHub Pages.
      */
     let isDictLoaderPatched = false;
     function ensureGzippedDictLoader() {
-      if (isDictLoaderPatched || typeof CompressionStream === 'undefined') return;
+      if (isDictLoaderPatched) return;
       isDictLoaderPatched = true;
 
       const origOpen = XMLHttpRequest.prototype.open;
       const origSend = XMLHttpRequest.prototype.send;
 
       XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+        if (typeof url === 'string') {
+          // Fix A: Repair collapsed single slash after http:/ or https:/ caused by kuromoji's path.join()
+          url = url.replace(/^(https?:)\/(?!\/)/i, '$1//');
+        }
         this._kuromojiUrl = typeof url === 'string' && url.endsWith('.dat.gz') ? url : null;
         return origOpen.call(this, method, url, ...rest);
       };
 
       XMLHttpRequest.prototype.send = function (...args) {
-        if (!this._kuromojiUrl) {
+        if (!this._kuromojiUrl || typeof CompressionStream === 'undefined') {
           return origSend.apply(this, args);
         }
 
@@ -819,6 +959,33 @@
       };
     }
 
+    /* Auto-resize Box 1 and Box 2 vertically to fit content (minimum 2 lines, no scrollbars) */
+    const MIN_BOX_HEIGHT_PX = 86; // ~5.4rem (2 lines of text + furigana headroom)
+
+    function autoResizeBoxes() {
+      // Reset heights to measure natural scrollHeight
+      textOutputBox.style.height = `${MIN_BOX_HEIGHT_PX}px`;
+      furiganaBackdrop.style.height = 'auto';
+      romanizedOutputBox.style.height = `${MIN_BOX_HEIGHT_PX}px`;
+
+      const box1ContentHeight = Math.max(
+        MIN_BOX_HEIGHT_PX,
+        textOutputBox.scrollHeight,
+        currentLang === 'ja' ? furiganaBackdrop.scrollHeight : 0
+      );
+
+      const box2ContentHeight = Math.max(
+        MIN_BOX_HEIGHT_PX,
+        romanizedOutputBox.scrollHeight
+      );
+
+      box1Wrapper.style.height = `${box1ContentHeight}px`;
+      textOutputBox.style.height = `${box1ContentHeight}px`;
+      furiganaBackdrop.style.height = `${box1ContentHeight}px`;
+      romanizedOutputBox.style.height = `${box2ContentHeight}px`;
+    }
+    /* === END CHECKPOINT 4 (JS) === */
+
     // Robust Japanese Kuroshiro + Kuromoji Loader
     async function initKuroshiro() {
       ensureGzippedDictLoader();
@@ -827,7 +994,7 @@
       const KuromojiAnalyzerClass = typeof KuromojiAnalyzer !== 'undefined' ? (KuromojiAnalyzer.default || KuromojiAnalyzer) : null;
 
       if (typeof KuroshiroClass !== 'function' || typeof KuromojiAnalyzerClass !== 'function') {
-        setEngineStatus('ready-fallback', 'Ready (Built-in Mode)');
+        setEngineStatus('ready-fallback', 'Ready (kanjiapi.dev Mode)');
         return;
       }
 
@@ -860,7 +1027,7 @@
         }
       }
 
-      setEngineStatus('ready-fallback', 'Ready (Built-in Mode)');
+      setEngineStatus('ready-fallback', 'Ready (kanjiapi.dev Mode)');
       updateRomanization();
     }
 
@@ -887,7 +1054,48 @@
         .replace(/>/g, '&gt;');
     }
 
-    /* Fast Fallback Japanese Transliteration & Furigana (used only before Kuromoji finishes loading) */
+    /* Resolve single Kanji reading from KANJI_FALLBACK or KANJI_API_CACHE (with okurigana awareness) */
+    function resolveFallbackKanjiAt(str, i) {
+      const ch = str[i];
+      const rest = str.slice(i + 1);
+      const apiEntry = KANJI_API_CACHE[ch];
+
+      // 1. Check if Kanji + following Hiragana matches an okurigana rule from kanjiapi.dev (e.g. 食 + べる -> た)
+      if (apiEntry && apiEntry.okuriRules) {
+        for (const rule of apiEntry.okuriRules) {
+          if (rest.startsWith(rule.okuri)) {
+            return {
+              kana: rule.stem,
+              romaji: kanaToRomajiString(rule.stem),
+              isOkuriStem: true
+            };
+          }
+        }
+      }
+
+      // 2. Check starter KANJI_FALLBACK
+      if (KANJI_FALLBACK[ch]) {
+        return {
+          kana: KANJI_FALLBACK[ch].kana,
+          romaji: KANJI_FALLBACK[ch].romaji,
+          isOkuriStem: false
+        };
+      }
+
+      // 3. Check KANJI_API_CACHE (use On-reading if adjacent to another Kanji, else primary reading)
+      if (apiEntry && apiEntry.kana) {
+        const adjKanji = (i > 0 && KANJI_REGEX.test(str[i - 1])) || (i + 1 < str.length && KANJI_REGEX.test(str[i + 1]));
+        return {
+          kana: adjKanji ? apiEntry.onKana : apiEntry.kana,
+          romaji: adjKanji ? apiEntry.onRomaji : apiEntry.romaji,
+          isOkuriStem: false
+        };
+      }
+
+      return null;
+    }
+
+    /* Fallback Japanese Transliteration & Furigana (uses KANJI_FALLBACK + kanjiapi.dev cache) */
     function fallbackJapaneseRomanize(str) {
       let res = '';
       let i = 0;
@@ -904,8 +1112,13 @@
         }
         if (compoundFound) continue;
 
-        if (KANJI_FALLBACK[str[i]]) {
-          res += (res && !res.endsWith(' ') ? ' ' : '') + KANJI_FALLBACK[str[i]].romaji + ' ';
+        const kanjiMatch = resolveFallbackKanjiAt(str, i);
+        if (kanjiMatch) {
+          if (kanjiMatch.isOkuriStem) {
+            res += (res && !res.endsWith(' ') ? ' ' : '') + kanjiMatch.romaji;
+          } else {
+            res += (res && !res.endsWith(' ') ? ' ' : '') + kanjiMatch.romaji + ' ';
+          }
           i++;
           continue;
         }
@@ -958,8 +1171,9 @@
         }
         if (compoundFound) continue;
 
-        if (KANJI_FALLBACK[str[i]]) {
-          html += `<ruby>${escapeHtml(str[i])}<rt>${KANJI_FALLBACK[str[i]].kana}</rt></ruby>`;
+        const kanjiMatch = resolveFallbackKanjiAt(str, i);
+        if (kanjiMatch && kanjiMatch.kana) {
+          html += `<ruby>${escapeHtml(str[i])}<rt>${kanjiMatch.kana}</rt></ruby>`;
           i++;
           continue;
         }
@@ -1185,18 +1399,11 @@
     }
 
     /* ==========================================================================
-       === CHECKPOINT 3 (JS): Single-Source-of-Truth Furigana + Romaji Sync ===
+       === CHECKPOINT 3 & 4 (JS): Single-Source-of-Truth Furigana + Romaji Sync ===
        Both #furigana-backdrop (Box 1) and #romanized-output-box (Box 2) are
-       populated from the same Kuroshiro + Kuromoji conversion pass.
+       populated from Kuroshiro + Kuromoji, with kanjiapi.dev as live fallback.
        ========================================================================== */
     let currentConversionId = 0;
-
-    function syncBackdropScroll() {
-      furiganaBackdrop.scrollTop = textOutputBox.scrollTop;
-      furiganaBackdrop.scrollLeft = textOutputBox.scrollLeft;
-    }
-
-    textOutputBox.addEventListener('scroll', syncBackdropScroll);
 
     async function updateRomanization() {
       const text = textOutputBox.value;
@@ -1206,19 +1413,22 @@
       if (!text) {
         furiganaBackdrop.innerHTML = '';
         romanizedOutputBox.value = '';
+        autoResizeBoxes();
         return;
       }
 
       if (currentLang === 'ja') {
         // Immediate synchronous render so typed characters appear with 0ms delay
         furiganaBackdrop.innerHTML = fallbackJapaneseFuriganaHtml(text);
-        syncBackdropScroll();
+        autoResizeBoxes();
 
         if (!text.trim()) {
           romanizedOutputBox.value = '';
+          autoResizeBoxes();
           return;
         }
 
+        // Primary Path: Kuroshiro + Kuromoji morphological engine
         if (isKuroshiroReady && kuroshiroInstance) {
           try {
             const safeText = escapeHtml(text);
@@ -1234,25 +1444,34 @@
               })
             ]);
 
-            // Ignore stale async results if the user typed again while converting
             if (conversionId !== currentConversionId || currentLang !== 'ja') return;
 
             furiganaBackdrop.innerHTML = furiganaHtml.endsWith('\n')
               ? furiganaHtml + '\u200b'
               : furiganaHtml;
             romanizedOutputBox.value = romaji;
-            syncBackdropScroll();
+            autoResizeBoxes();
             return;
           } catch (e) {
-            console.warn("Kuroshiro conversion error, running fallback:", e);
+            console.warn("Kuroshiro conversion error, running kanjiapi.dev fallback:", e);
           }
         }
 
+        // Fallback Path (Fix C): Render immediately from cache, then fetch any missing Kanji from kanjiapi.dev
         romanizedOutputBox.value = fallbackJapaneseRomanize(text);
+        autoResizeBoxes();
+
+        await ensureKanjiReadingsLoaded(text);
+        if (conversionId !== currentConversionId || currentLang !== 'ja') return;
+
+        furiganaBackdrop.innerHTML = fallbackJapaneseFuriganaHtml(text);
+        romanizedOutputBox.value = fallbackJapaneseRomanize(text);
+        autoResizeBoxes();
       } else {
         furiganaBackdrop.innerHTML = '';
         if (!text.trim()) {
           romanizedOutputBox.value = '';
+          autoResizeBoxes();
           return;
         }
         if (currentLang === 'zh') {
@@ -1262,9 +1481,10 @@
         } else if (currentLang === 'ru') {
           romanizedOutputBox.value = romanizeRussian(text);
         }
+        autoResizeBoxes();
       }
     }
-    /* === END CHECKPOINT 3 (JS) === */
+    /* === END CHECKPOINT 3 & 4 (JS) === */
 
     /* Listen to manual edits in Box 1 */
     textOutputBox.addEventListener('input', () => {
@@ -1339,6 +1559,7 @@
       romanizedOutputBox.value = '';
       textOutputBox.blur();
       charCount.textContent = '0 chars';
+      autoResizeBoxes();
     });
 
     /* Clipboard Copy Feedback */
