@@ -14,6 +14,12 @@
   <script src="https://cdn.jsdelivr.net/npm/kuroshiro@1.2.0/dist/kuroshiro.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/kuroshiro-analyzer-kuromoji@1.1.0/dist/kuroshiro-analyzer-kuromoji.min.js"></script>
 
+  <!-- === CHECKPOINT 5 (HEAD): Fix 3 Offline Recognition Engines (KanjiCanvas + HanziLookupJS) === -->
+  <script src="https://cdn.jsdelivr.net/gh/asdfjkl/kanjicanvas@master/docs/resources/javascript/kanji-canvas.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/gh/asdfjkl/kanjicanvas@master/docs/resources/javascript/ref-patterns.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/gh/gugray/HanziLookupJS@master/dist/hanzilookup.min.js" defer></script>
+  <!-- === END CHECKPOINT 5 (HEAD) === -->
+
   <style>
     /* ==========================================================================
        === CHECKPOINT 1 (CSS): Box 1 Furigana Overlay vs. Furifont Rollback ===
@@ -118,7 +124,7 @@
       display: grid;
       gap: 0.75rem;
       grid-template-columns: 1fr;
-      align-items: start;
+      align-items: stretch;
     }
 
     /* Landscape aspect ratio: keep Box 1 and Box 2 side by side */
@@ -127,7 +133,7 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
       .canvas-viewport {
-        height: clamp(145px, 32vh, 250px);
+        height: clamp(145px, 34vh, 260px);
       }
     }
 
@@ -137,7 +143,7 @@
         grid-template-columns: 1fr;
       }
       .canvas-viewport {
-        height: clamp(175px, 26vh, 260px);
+        height: clamp(175px, 28vh, 260px);
       }
     }
 
@@ -185,52 +191,39 @@
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans selection:bg-indigo-100 selection:text-indigo-800">
 
-  <!-- Header -->
+  <!-- Ultra-Compact Header (Flags Only + Hover Status Light) -->
   <header class="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-30">
-    <div class="max-w-5xl mx-auto px-4 py-2.5 flex items-center justify-between">
-      <div class="flex items-center space-x-3">
-        <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white font-bold shadow-md shadow-indigo-200">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+    <div class="max-w-5xl mx-auto px-4 flex items-center justify-between">
+      <div class="flex items-center space-x-2">
+        <!-- App Icon -->
+        <div class="w-7 h-7 rounded-lg bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white shadow-sm shrink-0">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
           </svg>
         </div>
-        <div>
-          <h1 class="text-base sm:text-lg font-bold text-slate-900 leading-tight">Multilingual Handwriting Recognition</h1>
-          <p class="text-[11px] text-slate-500">Google Input Tools Handwriting with Real-time Romanization</p>
-        </div>
+
+        <!-- Flag-Only Language Navigation Tabs -->
+        <nav class="flex items-center space-x-1 -mb-px overflow-x-auto hide-scrollbar" id="lang-tabs">
+          <button data-lang="ja" title="Japanese (Kanji / Kana)" aria-label="Japanese" class="lang-tab active-tab py-1.5 px-3 text-xl leading-none border-b-2 border-indigo-600 text-indigo-600 transition-colors">
+            <span>🇯🇵</span>
+          </button>
+          <button data-lang="zh" title="Chinese (Hanzi / Pinyin)" aria-label="Chinese" class="lang-tab py-1.5 px-3 text-xl leading-none border-b-2 border-transparent text-slate-600 hover:border-slate-300 transition-colors">
+            <span>🇨🇳</span>
+          </button>
+          <button data-lang="ko" title="Korean (Hangul / RR)" aria-label="Korean" class="lang-tab py-1.5 px-3 text-xl leading-none border-b-2 border-transparent text-slate-600 hover:border-slate-300 transition-colors">
+            <span>🇰🇷</span>
+          </button>
+          <button data-lang="ru" title="Russian (Cyrillic / Latin)" aria-label="Russian" class="lang-tab py-1.5 px-3 text-xl leading-none border-b-2 border-transparent text-slate-600 hover:border-slate-300 transition-colors">
+            <span>🇷🇺</span>
+          </button>
+        </nav>
       </div>
       
-      <!-- Engine Status Badge -->
-      <div id="status-badge" class="flex items-center text-xs font-medium px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-        <span class="w-2 h-2 rounded-full bg-amber-400 mr-2 animate-pulse"></span>
-        <span id="status-text">Loading Kuromoji dict...</span>
+      <!-- Engine Status Light (Text Revealed Only on Mouseover) -->
+      <div id="status-badge" title="Loading Kuromoji dict..." class="group flex items-center text-xs font-medium p-1.5 hover:px-2.5 hover:py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 transition-all cursor-default">
+        <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
+        <span id="status-text" class="hidden group-hover:inline ml-1.5 whitespace-nowrap">Loading Kuromoji dict...</span>
       </div>
-    </div>
-
-    <!-- Language Navigation Tabs -->
-    <div class="max-w-5xl mx-auto px-4">
-      <nav class="flex space-x-2 border-b border-transparent -mb-px overflow-x-auto hide-scrollbar" id="lang-tabs">
-        <button data-lang="ja" class="lang-tab active-tab flex items-center space-x-2 py-2 px-3.5 text-sm font-semibold border-b-2 border-indigo-600 text-indigo-600 transition-colors">
-          <span>🇯🇵</span>
-          <span>Japanese</span>
-          <span class="text-xs font-normal text-slate-400">(Kanji / Kana)</span>
-        </button>
-        <button data-lang="zh" class="lang-tab flex items-center space-x-2 py-2 px-3.5 text-sm font-medium border-b-2 border-transparent text-slate-600 hover:text-indigo-600 hover:border-slate-300 transition-colors">
-          <span>🇨🇳</span>
-          <span>Chinese</span>
-          <span class="text-xs font-normal text-slate-400">(Hanzi / Pinyin)</span>
-        </button>
-        <button data-lang="ko" class="lang-tab flex items-center space-x-2 py-2 px-3.5 text-sm font-medium border-b-2 border-transparent text-slate-600 hover:text-indigo-600 hover:border-slate-300 transition-colors">
-          <span>🇰🇷</span>
-          <span>Korean</span>
-          <span class="text-xs font-normal text-slate-400">(Hangul / RR)</span>
-        </button>
-        <button data-lang="ru" class="lang-tab flex items-center space-x-2 py-2 px-3.5 text-sm font-medium border-b-2 border-transparent text-slate-600 hover:text-indigo-600 hover:border-slate-300 transition-colors">
-          <span>🇷🇺</span>
-          <span>Russian</span>
-          <span class="text-xs font-normal text-slate-400">(Cyrillic / Latin)</span>
-        </button>
-      </nav>
     </div>
   </header>
 
@@ -260,6 +253,8 @@
       <div class="canvas-viewport relative w-full bg-slate-50/50 rounded-xl border border-slate-200 overflow-hidden flex items-center justify-center">
         <div id="grid-guide" class="absolute inset-0 cjk-grid pointer-events-none"></div>
         <canvas id="drawing-canvas" class="relative z-10 w-full h-full"></canvas>
+        <!-- Offscreen 256x256 Canvas for Fix 3 (KanjiCanvas Offline Recognition) -->
+        <canvas id="offline-kanji-canvas" width="256" height="256" class="hidden pointer-events-none"></canvas>
       </div>
 
       <!-- Candidate Selection Strip -->
@@ -274,55 +269,52 @@
       </div>
     </div>
 
-    <!-- Dual Textboxes Section (Side-by-Side in Landscape, Stacked in Portrait, Auto-Growing from 2 Lines) -->
+    <!-- Dual Textboxes Section (Synchronized Size, Side-by-Side in Landscape, Stacked in Portrait) -->
     <div class="dual-boxes-grid">
       
       <!-- Box 1: Editable Character Input -->
-      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 flex flex-col">
-        <div class="flex items-center justify-between mb-1.5">
-          <div class="flex items-center space-x-2">
-            <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
-            <label for="text-output-box" class="text-xs font-bold uppercase tracking-wider text-slate-600">
-              Box 1: Character Text <span class="font-normal lowercase text-slate-400">(Editable · Synced Furigana)</span>
-            </label>
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <div class="flex items-center space-x-2">
+              <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+              <label for="text-output-box" class="text-xs font-bold uppercase tracking-wider text-slate-600">
+                Box 1: Character Text <span class="font-normal lowercase text-slate-400">(Editable · Synced Furigana)</span>
+              </label>
+            </div>
+            <div class="flex items-center space-x-1">
+              <button id="btn-copy-box1" title="Copy Text" class="px-2 py-1 text-xs text-slate-600 hover:text-indigo-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center space-x-1">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
           </div>
-          <div class="flex items-center space-x-1">
-            <button id="btn-copy-box1" title="Copy Text" class="px-2 py-1 text-xs text-slate-600 hover:text-indigo-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center space-x-1">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-              <span>Copy</span>
-            </button>
+
+          <!-- ====================================================================
+               === CHECKPOINT 2 & 4 (HTML): Auto-Growing Box 1 Overlay Wrapper ===
+               ==================================================================== -->
+          <div id="box1-wrapper" class="auto-grow-box relative w-full bg-white border border-slate-200 rounded-xl focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-colors">
+            <!-- Synced Furigana Backdrop Layer -->
+            <div
+              id="furigana-backdrop"
+              aria-hidden="true"
+              class="box1-shared-metrics auto-grow-box absolute inset-0 w-full text-slate-800 pointer-events-none select-none"
+            ></div>
+
+            <!-- Interactive Textarea Layer -->
+            <textarea 
+              id="text-output-box" 
+              rows="2" 
+              lang="ja"
+              placeholder="Characters will appear here as you tap candidates, or type directly..." 
+              class="box1-shared-metrics auto-grow-box overlay-ja-active relative z-10 w-full text-slate-800 bg-transparent border-0 resize-none focus:outline-none block"
+            ></textarea>
           </div>
+          <!-- === END CHECKPOINT 2 & 4 (HTML) === -->
         </div>
 
-        <!-- ====================================================================
-             === CHECKPOINT 2 & 4 (HTML): Auto-Growing Box 1 Overlay Wrapper ===
-             Previous fixed-height h-24 markup (for rollback):
-             <div class="relative w-full h-24 bg-white border border-slate-200 rounded-xl overflow-hidden ...">
-               <div id="furigana-backdrop" class="box1-shared-metrics absolute inset-0 w-full h-full ... overflow-y-auto"></div>
-               <textarea id="text-output-box" rows="2" class="box1-shared-metrics overlay-ja-active relative z-10 w-full h-full ..."></textarea>
-             </div>
-             ==================================================================== -->
-        <div id="box1-wrapper" class="auto-grow-box relative w-full bg-white border border-slate-200 rounded-xl focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-colors">
-          <!-- Synced Furigana Backdrop Layer -->
-          <div
-            id="furigana-backdrop"
-            aria-hidden="true"
-            class="box1-shared-metrics auto-grow-box absolute inset-0 w-full text-slate-800 pointer-events-none select-none"
-          ></div>
-
-          <!-- Interactive Textarea Layer -->
-          <textarea 
-            id="text-output-box" 
-            rows="2" 
-            lang="ja"
-            placeholder="Characters will appear here as you tap candidates, or type directly..." 
-            class="box1-shared-metrics auto-grow-box overlay-ja-active relative z-10 w-full text-slate-800 bg-transparent border-0 resize-none focus:outline-none block"
-          ></textarea>
-        </div>
-        <!-- === END CHECKPOINT 2 & 4 (HTML) === -->
-
-        <!-- Quick Editing Toolbar -->
-        <div class="mt-2 flex items-center justify-between pt-1.5 border-t border-slate-100">
+        <!-- Quick Editing Toolbar (Matched height with Box 2 footer) -->
+        <div class="mt-2 flex items-center justify-between pt-1.5 border-t border-slate-100 min-h-[30px]">
           <div class="flex items-center space-x-1.5">
             <button id="btn-add-space" class="px-2.5 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
               Space ␣
@@ -338,30 +330,32 @@
       </div>
 
       <!-- Box 2: Read-Only Romanization Output -->
-      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 flex flex-col">
-        <div class="flex items-center justify-between mb-1.5">
-          <div class="flex items-center space-x-2">
-            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <label for="romanized-output-box" class="text-xs font-bold uppercase tracking-wider text-slate-600">
-              Box 2: <span id="romanization-label">Romaji (Hepburn)</span> <span class="font-normal lowercase text-slate-400">(Read-Only)</span>
-            </label>
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <div class="flex items-center space-x-2">
+              <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <label for="romanized-output-box" class="text-xs font-bold uppercase tracking-wider text-slate-600">
+                Box 2: <span id="romanization-label">Romaji (Hepburn)</span> <span class="font-normal lowercase text-slate-400">(Read-Only)</span>
+              </label>
+            </div>
+            <button id="btn-copy-box2" title="Copy Transliteration" class="px-2 py-1 text-xs text-slate-600 hover:text-emerald-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center space-x-1">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+              <span>Copy</span>
+            </button>
           </div>
-          <button id="btn-copy-box2" title="Copy Transliteration" class="px-2 py-1 text-xs text-slate-600 hover:text-emerald-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center space-x-1">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-            <span>Copy</span>
-          </button>
+
+          <textarea 
+            id="romanized-output-box" 
+            rows="2" 
+            readonly 
+            placeholder="Romanized pronunciation will appear here..." 
+            class="box1-shared-metrics auto-grow-box w-full text-slate-700 bg-slate-50/70 border border-slate-200 rounded-xl resize-none focus:outline-none cursor-default block"
+          ></textarea>
         </div>
 
-        <textarea 
-          id="romanized-output-box" 
-          rows="2" 
-          readonly 
-          placeholder="Romanized pronunciation will appear here..." 
-          class="box1-shared-metrics auto-grow-box w-full text-slate-700 bg-slate-50/70 border border-slate-200 rounded-xl resize-none focus:outline-none cursor-default block"
-        ></textarea>
-
-        <div class="mt-2 flex items-center justify-between pt-1.5 border-t border-slate-100 text-[11px] text-slate-400">
-          <span id="translit-mode-description">Hiragana, Katakana &amp; Joyo Kanji to Romaji</span>
+        <div class="mt-2 flex items-center justify-between pt-1.5 border-t border-slate-100 text-[11px] text-slate-400 min-h-[30px]">
+          <span id="translit-mode-description">Hiragana, Katakana & Joyo Kanji to Romaji</span>
           <span id="char-count">0 chars</span>
         </div>
       </div>
@@ -569,20 +563,137 @@
     window.addEventListener('touchend', stopDrawing, { passive: false });
 
     /* ==========================================================================
-       Google Input Tools Handwriting API Request
+       === CHECKPOINT 5 (JS): VPN-Resilient Handwriting Recognition ===
+       - Fix 1: Multi-Endpoint Fallback Chain (Direct + Google Mirror + Relay Proxy)
+       - Fix 2: Sanitized `device` payload & stripped Referrer/Credentials
+       - Fix 3: Offline Client-Side Recognition (KanjiCanvas + HanziLookupJS)
        ========================================================================== */
+    let isKanjiCanvasInitialized = false;
+    let isHanziLookupOrigReady = false;
+    let isHanziLookupMmahReady = false;
+
+    function initOfflineRecognizers() {
+      if (typeof KanjiCanvas !== 'undefined' && KanjiCanvas.init && !isKanjiCanvasInitialized) {
+        try {
+          KanjiCanvas.init('offline-kanji-canvas');
+          isKanjiCanvasInitialized = true;
+        } catch (e) {
+          console.warn('KanjiCanvas init warning:', e);
+        }
+      }
+
+      if (typeof HanziLookup !== 'undefined' && HanziLookup.init) {
+        const HANZI_CDN = 'https://cdn.jsdelivr.net/gh/gugray/HanziLookupJS@master/dist/';
+        if (!isHanziLookupOrigReady) {
+          HanziLookup.init('orig', HANZI_CDN + 'orig.json', (ok) => {
+            if (ok) isHanziLookupOrigReady = true;
+          });
+        }
+        if (!isHanziLookupMmahReady) {
+          HanziLookup.init('mmah', HANZI_CDN + 'mmah.json', (ok) => {
+            if (ok) isHanziLookupMmahReady = true;
+          });
+        }
+      }
+    }
+
+    async function recognizeOfflineFallback(rect) {
+      if (strokes.length === 0) return [];
+      const results = [];
+
+      const scaleX = 256 / Math.max(rect.width, 1);
+      const scaleY = 256 / Math.max(rect.height, 1);
+
+      const normalizedStrokes256 = strokes
+        .filter(s => s.x.length > 0)
+        .map(s => s.x.map((x, idx) => [
+          Math.round(x * scaleX),
+          Math.round(s.y[idx] * scaleY)
+        ]));
+
+      if (typeof KanjiCanvas !== 'undefined' && KanjiCanvas.refPatterns) {
+        try {
+          if (!isKanjiCanvasInitialized && KanjiCanvas.init) {
+            KanjiCanvas.init('offline-kanji-canvas');
+            isKanjiCanvasInitialized = true;
+          }
+          KanjiCanvas['recordedPattern_offline-kanji-canvas'] = normalizedStrokes256.map(stroke =>
+            stroke.map(pt => [pt[0], pt[1]])
+          );
+          const rawOut = KanjiCanvas.recognize('offline-kanji-canvas');
+          if (typeof rawOut === 'string' && rawOut.trim()) {
+            const parsed = rawOut.trim().split(/\s+/).filter(Boolean);
+            for (const ch of parsed) {
+              if (!results.includes(ch)) results.push(ch);
+            }
+          }
+        } catch (e) {
+          console.warn('KanjiCanvas fallback error:', e);
+        }
+      }
+
+      if (typeof HanziLookup !== 'undefined' && (isHanziLookupMmahReady || isHanziLookupOrigReady)) {
+        try {
+          const analyzedChar = new HanziLookup.AnalyzedCharacter(normalizedStrokes256);
+          const matcherName = (currentLang === 'zh' && isHanziLookupMmahReady)
+            ? 'mmah'
+            : (isHanziLookupOrigReady ? 'orig' : 'mmah');
+          const matcher = new HanziLookup.Matcher(matcherName);
+
+          const hanziMatches = await new Promise((resolve) => {
+            matcher.match(analyzedChar, 10, (matches) => resolve(matches || []));
+          });
+
+          for (const m of hanziMatches) {
+            if (m && m.character && !results.includes(m.character)) {
+              results.push(m.character);
+            }
+          }
+        } catch (e) {
+          console.warn('HanziLookup fallback error:', e);
+        }
+      }
+
+      return results.slice(0, 10);
+    }
+
+    async function postHandwritingWithTimeout(url, bodyString, timeoutMs = 3500) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          mode: "cors",
+          credentials: "omit",
+          referrerPolicy: "no-referrer",
+          headers: { "Content-Type": "application/json" },
+          body: bodyString,
+          signal: controller.signal
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        if (data && data[0] === "SUCCESS" && data[1] && data[1][0] && data[1][0][1]) {
+          return data[1][0][1];
+        }
+        throw new Error("Invalid handwriting response payload");
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
     async function fetchHandwritingCandidates() {
       if (strokes.length === 0) return;
       
       recognizingIndicator.classList.remove('hidden');
       const rect = canvas.getBoundingClientRect();
       const inkPayload = strokes.map(s => [s.x, s.y, s.t]);
+      const apiLang = LANGUAGES[currentLang].apiLang;
       
       const payload = {
         app_version: 0.4,
         api_level: "537.36",
-        device: navigator.userAgent,
-        input_type: "0",
+        device: "5.0 (Windows)",
+        input_type: 0,
         options: "enable_pre_space",
         requests: [
           {
@@ -593,32 +704,42 @@
             pre_context: "",
             max_num_results: 10,
             max_completions: 0,
-            language: LANGUAGES[currentLang].apiLang,
+            language: apiLang,
             ink: inkPayload
           }
         ]
       };
 
-      try {
-        const response = await fetch("https://inputtools.google.com/request?itc=" + LANGUAGES[currentLang].apiLang + "&app=translate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
+      const bodyString = JSON.stringify(payload);
+      const primaryUrl = `https://inputtools.google.com/request?itc=${apiLang}&app=translate`;
+      const mirrorUrl = `https://www.google.com/inputtools/request?ime=handwriting&itc=${apiLang}&app=mobilesearch&cs=1&oe=UTF-8`;
 
-        const data = await response.json();
-        if (data && data[0] === "SUCCESS" && data[1] && data[1][0] && data[1][0][1]) {
-          renderCandidates(data[1][0][1]);
-        } else {
-          renderCandidates([]);
+      const endpoints = [
+        primaryUrl,
+        mirrorUrl,
+        `https://corsproxy.io/?${encodeURIComponent(primaryUrl)}`
+      ];
+
+      try {
+        for (const endpoint of endpoints) {
+          try {
+            const candidates = await postHandwritingWithTimeout(endpoint, bodyString, 3500);
+            if (candidates && candidates.length > 0) {
+              renderCandidates(candidates);
+              return;
+            }
+          } catch (endpointErr) {
+            console.warn(`Endpoint failed (${endpoint}):`, endpointErr.message);
+          }
         }
-      } catch (err) {
-        console.warn("Recognition error:", err);
-        renderCandidates([]);
+
+        const offlineCandidates = await recognizeOfflineFallback(rect);
+        renderCandidates(offlineCandidates);
       } finally {
         recognizingIndicator.classList.add('hidden');
       }
     }
+    /* === END CHECKPOINT 5 (JS) === */
 
     /* ==========================================================================
        Candidate Rendering & Insertion (Without Highlighting Box 1)
@@ -667,7 +788,6 @@
     let kuroshiroInstance = null;
     let isKuroshiroReady = false;
 
-    // Built-in Kana romanization dictionary (Standard + Modern Extended Digraphs)
     const KANA_MAP = {
       // Standard Hiragana
       'あ':'a','い':'i','う':'u','え':'e','お':'o',
@@ -760,7 +880,6 @@
       'ー': '-'
     };
 
-    // Starter dictionary (instant 0ms lookup)
     const KANJI_FALLBACK = {
       '日本': { romaji: 'nihon', kana: 'にほん' },
       '東京': { romaji: 'toukyou', kana: 'とうきょう' },
@@ -795,19 +914,15 @@
 
     /* ==========================================================================
        === CHECKPOINT 4 (JS): Fix A (GitHub Pages URL Fix) + Fix C (kanjiapi.dev)
-           + Auto-Growing Box Height (No Scrollbars) ===
-       Previous static-only KANJI_FALLBACK & un-repaired path.join URLs can be
-       restored by commenting out the url.replace line and fetchKanjiApiData().
+           + Synchronized Auto-Growing Box Height (No Scrollbars) ===
        ========================================================================== */
 
-    // Convert Katakana string (from kanjiapi.dev on_readings) to Hiragana
     function katakanaToHiragana(str) {
       return str.replace(/[\u30A1-\u30F6]/g, (ch) =>
         String.fromCharCode(ch.charCodeAt(0) - 0x60)
       );
     }
 
-    // Convert pure Kana string to Hepburn Romaji using KANA_MAP
     function kanaToRomajiString(str) {
       let res = '';
       let i = 0;
@@ -841,7 +956,6 @@
       return res;
     }
 
-    // In-memory cache for kanjiapi.dev responses
     const KANJI_API_CACHE = {};
     const KANJI_REGEX = /[\u4E00-\u9FAF\u3400-\u4DBF]/;
 
@@ -855,7 +969,6 @@
         const kunList = (data.kun_readings || []).map(r => r.replace(/^-|-$/g, ''));
         const onList = (data.on_readings || []).map(r => katakanaToHiragana(r.replace(/^-|-$/g, '')));
 
-        // Separate okurigana kun readings (e.g. "た.べる") from standalone kun readings
         const okuriRules = [];
         let standaloneKun = null;
 
@@ -870,7 +983,6 @@
           }
         }
 
-        // Primary reading when standalone: standalone kun -> first on reading -> first kun stem
         const primaryKana = standaloneKun
           || onList[0]
           || (okuriRules[0] ? okuriRules[0].stem : '')
@@ -893,7 +1005,6 @@
       }
     }
 
-    // Ensure all Kanji in `str` are cached in KANJI_API_CACHE
     async function ensureKanjiReadingsLoaded(str) {
       const missing = [];
       for (const ch of str) {
@@ -907,10 +1018,6 @@
       }
     }
 
-    /*
-     * Fix A: Normalize Kuromoji .dat.gz XHR responses AND repair kuromoji's
-     * mangled `path.join()` URLs ("https:/cdn..." -> "https://cdn...") on GitHub Pages.
-     */
     let isDictLoaderPatched = false;
     function ensureGzippedDictLoader() {
       if (isDictLoaderPatched) return;
@@ -921,7 +1028,6 @@
 
       XMLHttpRequest.prototype.open = function (method, url, ...rest) {
         if (typeof url === 'string') {
-          // Fix A: Repair collapsed single slash after http:/ or https:/ caused by kuromoji's path.join()
           url = url.replace(/^(https?:)\/(?!\/)/i, '$1//');
         }
         this._kuromojiUrl = typeof url === 'string' && url.endsWith('.dat.gz') ? url : null;
@@ -959,11 +1065,10 @@
       };
     }
 
-    /* Auto-resize Box 1 and Box 2 vertically to fit content (minimum 2 lines, no scrollbars) */
-    const MIN_BOX_HEIGHT_PX = 86; // ~5.4rem (2 lines of text + furigana headroom)
+    const MIN_BOX_HEIGHT_PX = 86;
 
+    /* Always synchronize the vertical height of Box 1 and Box 2 */
     function autoResizeBoxes() {
-      // Reset heights to measure natural scrollHeight
       textOutputBox.style.height = `${MIN_BOX_HEIGHT_PX}px`;
       furiganaBackdrop.style.height = 'auto';
       romanizedOutputBox.style.height = `${MIN_BOX_HEIGHT_PX}px`;
@@ -979,10 +1084,12 @@
         romanizedOutputBox.scrollHeight
       );
 
-      box1Wrapper.style.height = `${box1ContentHeight}px`;
-      textOutputBox.style.height = `${box1ContentHeight}px`;
-      furiganaBackdrop.style.height = `${box1ContentHeight}px`;
-      romanizedOutputBox.style.height = `${box2ContentHeight}px`;
+      const syncedHeight = Math.max(box1ContentHeight, box2ContentHeight);
+
+      box1Wrapper.style.height = `${syncedHeight}px`;
+      textOutputBox.style.height = `${syncedHeight}px`;
+      furiganaBackdrop.style.height = `${syncedHeight}px`;
+      romanizedOutputBox.style.height = `${syncedHeight}px`;
     }
     /* === END CHECKPOINT 4 (JS) === */
 
@@ -1033,34 +1140,33 @@
 
     function setEngineStatus(type, msg) {
       statusText.textContent = msg;
-      statusBadge.className = 'flex items-center text-xs font-medium px-2.5 py-1 rounded-full border ';
+      statusBadge.title = msg;
+      statusBadge.className = 'group flex items-center text-xs font-medium p-1.5 hover:px-2.5 hover:py-1 rounded-full border transition-all cursor-default ';
       
       if (type === 'ready') {
         statusBadge.className += 'bg-emerald-50 text-emerald-700 border-emerald-200';
-        statusBadge.querySelector('span').className = 'w-2 h-2 rounded-full bg-emerald-500 mr-2';
+        statusBadge.querySelector('span').className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0';
       } else if (type === 'ready-fallback') {
         statusBadge.className += 'bg-blue-50 text-blue-700 border-blue-200';
-        statusBadge.querySelector('span').className = 'w-2 h-2 rounded-full bg-blue-500 mr-2';
+        statusBadge.querySelector('span').className = 'w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0';
       } else {
         statusBadge.className += 'bg-amber-50 text-amber-700 border-amber-200';
-        statusBadge.querySelector('span').className = 'w-2 h-2 rounded-full bg-amber-400 mr-2 animate-pulse';
+        statusBadge.querySelector('span').className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0';
       }
     }
 
     function escapeHtml(str) {
       return str
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+        .replace(/&/g, '&')
+        .replace(/</g, '<')
+        .replace(/>/g, '>');
     }
 
-    /* Resolve single Kanji reading from KANJI_FALLBACK or KANJI_API_CACHE (with okurigana awareness) */
     function resolveFallbackKanjiAt(str, i) {
       const ch = str[i];
       const rest = str.slice(i + 1);
       const apiEntry = KANJI_API_CACHE[ch];
 
-      // 1. Check if Kanji + following Hiragana matches an okurigana rule from kanjiapi.dev (e.g. 食 + べる -> た)
       if (apiEntry && apiEntry.okuriRules) {
         for (const rule of apiEntry.okuriRules) {
           if (rest.startsWith(rule.okuri)) {
@@ -1073,7 +1179,6 @@
         }
       }
 
-      // 2. Check starter KANJI_FALLBACK
       if (KANJI_FALLBACK[ch]) {
         return {
           kana: KANJI_FALLBACK[ch].kana,
@@ -1082,7 +1187,6 @@
         };
       }
 
-      // 3. Check KANJI_API_CACHE (use On-reading if adjacent to another Kanji, else primary reading)
       if (apiEntry && apiEntry.kana) {
         const adjKanji = (i > 0 && KANJI_REGEX.test(str[i - 1])) || (i + 1 < str.length && KANJI_REGEX.test(str[i + 1]));
         return {
@@ -1095,7 +1199,6 @@
       return null;
     }
 
-    /* Fallback Japanese Transliteration & Furigana (uses KANJI_FALLBACK + kanjiapi.dev cache) */
     function fallbackJapaneseRomanize(str) {
       let res = '';
       let i = 0;
@@ -1400,8 +1503,6 @@
 
     /* ==========================================================================
        === CHECKPOINT 3 & 4 (JS): Single-Source-of-Truth Furigana + Romaji Sync ===
-       Both #furigana-backdrop (Box 1) and #romanized-output-box (Box 2) are
-       populated from Kuroshiro + Kuromoji, with kanjiapi.dev as live fallback.
        ========================================================================== */
     let currentConversionId = 0;
 
@@ -1418,7 +1519,6 @@
       }
 
       if (currentLang === 'ja') {
-        // Immediate synchronous render so typed characters appear with 0ms delay
         furiganaBackdrop.innerHTML = fallbackJapaneseFuriganaHtml(text);
         autoResizeBoxes();
 
@@ -1428,7 +1528,6 @@
           return;
         }
 
-        // Primary Path: Kuroshiro + Kuromoji morphological engine
         if (isKuroshiroReady && kuroshiroInstance) {
           try {
             const safeText = escapeHtml(text);
@@ -1457,7 +1556,6 @@
           }
         }
 
-        // Fallback Path (Fix C): Render immediately from cache, then fetch any missing Kanji from kanjiapi.dev
         romanizedOutputBox.value = fallbackJapaneseRomanize(text);
         autoResizeBoxes();
 
@@ -1508,12 +1606,10 @@
         currentLang = tab.getAttribute('data-lang');
         const langConfig = LANGUAGES[currentLang];
 
-        // Update UI guidelines & labels
         drawingInstructions.textContent = langConfig.instruction;
         romanizationLabel.textContent = langConfig.romajiName;
         translitDesc.textContent = langConfig.desc;
 
-        // Toggle Japanese Furigana Backdrop Overlay on Box 1 ONLY when Japanese is active
         textOutputBox.setAttribute('lang', currentLang);
         if (currentLang === 'ja') {
           textOutputBox.classList.add('overlay-ja-active');
@@ -1605,6 +1701,9 @@
     window.addEventListener('DOMContentLoaded', () => {
       resizeCanvas();
       initKuroshiro();
+    });
+    window.addEventListener('load', () => {
+      initOfflineRecognizers();
     });
   </script>
 </body>
