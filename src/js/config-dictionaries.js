@@ -159,6 +159,24 @@ const KANA_MAP = {
 };
 
 const KANJI_FALLBACK = {
+  // === CHECKPOINT 6 (CONFIG): CJK Numeral Kanji Readings ===
+  '零': { romaji: 'rei', kana: 'れい' },
+  '〇': { romaji: 'maru', kana: 'まる' },
+  '一': { romaji: 'ichi', kana: 'いち' },
+  '二': { romaji: 'ni', kana: 'に' },
+  '三': { romaji: 'san', kana: 'さん' },
+  '四': { romaji: 'yon', kana: 'よん' },
+  '五': { romaji: 'go', kana: 'ご' },
+  '六': { romaji: 'roku', kana: 'ろく' },
+  '七': { romaji: 'nana', kana: 'なな' },
+  '八': { romaji: 'hachi', kana: 'はち' },
+  '九': { romaji: 'kyuu', kana: 'きゅう' },
+  '十': { romaji: 'juu', kana: 'じゅう' },
+  '百': { romaji: 'hyaku', kana: 'ひゃく' },
+  '千': { romaji: 'sen', kana: 'せん' },
+  '万': { romaji: 'man', kana: 'まん' },
+  '億': { romaji: 'oku', kana: 'おく' },
+  // === END CHECKPOINT 6 (CONFIG) ===
   '日本': { romaji: 'nihon', kana: 'にほん' },
   '東京': { romaji: 'toukyou', kana: 'とうきょう' },
   '私': { romaji: 'watashi', kana: 'わたし' },
@@ -189,6 +207,31 @@ const KANJI_FALLBACK = {
   '来る': { romaji: 'kuru', kana: 'くる' },
   '何': { romaji: 'nani', kana: 'なに' }
 };
+
+/* ==========================================================================
+   === CHECKPOINT 6 (CONFIG): Multilingual Number Dictionaries ===
+   ========================================================================== */
+const CJK_DIGIT_VALUE = {
+  '零': 0, '〇': 0, '一': 1, '二': 2, '两': 2, '三': 3, '四': 4,
+  '五': 5, '六': 6, '七': 7, '八': 8, '九': 9
+};
+
+const CJK_SMALL_UNIT = { '十': 10, '百': 100, '千': 1000 };
+const CJK_LARGE_UNIT = { '万': 10000, '億': 100000000, '亿': 100000000 };
+
+const JA_DIGITS_ROMAJI = ['zero', 'ichi', 'ni', 'san', 'yon', 'go', 'roku', 'nana', 'hachi', 'kyuu'];
+const JA_DIGITS_KANA   = ['ぜろ', 'いち', 'に', 'さん', 'よん', 'ご', 'ろく', 'なな', 'はち', 'きゅう'];
+
+const ZH_DIGITS_HANZI  = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+const ZH_DIGITS_PINYIN = ['líng', 'yī', 'èr', 'sān', 'sì', 'wǔ', 'liù', 'qī', 'bā', 'jiǔ'];
+
+const KO_DIGITS_HANGUL = ['영', '일', '이', '삼', '사', '오', '육', '칠', '팔', '구'];
+
+const RU_ONES = ["nol'", "odin", "dva", "tri", "chetyre", "pyat'", "shest'", "sem'", "vosem'", "devyat'"];
+const RU_TEENS = ["desyat'", "odinnadtsat'", "dvenadtsat'", "trinadtsat'", "chetyrnadtsat'", "pyatnadtsat'", "shestnadtsat'", "semnadtsat'", "vosemnadtsat'", "devyatnadtsat'"];
+const RU_TENS = ["", "desyat'", "dvadtsat'", "tridtsat'", "sorok", "pyat'desyat", "shest'desyat", "sem'desyat", "vosem'desyat", "devyanosto"];
+const RU_HUNDREDS = ["", "sto", "dvesti", "trista", "chetyresta", "pyat'sot", "shest'sot", "sem'sot", "vosem'sot", "devyat'sot"];
+/* === END CHECKPOINT 6 (CONFIG) === */
 
 /* ==========================================================================
    Korean Hangul & Jamo Lookup Tables
