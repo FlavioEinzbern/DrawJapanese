@@ -93,6 +93,30 @@
 /* === END CHECKPOINT 1 (CSS) === */
 
 /* ==========================================================================
+   === CHECKPOINT 6 (CSS): Box 2 Overlay & Blue Romanized Numbers (#4f46e5) ===
+   To revert: remove #romanized-output-box.overlay-box2-active and .romanized-number
+   ========================================================================== */
+#romanized-output-box.overlay-box2-active {
+  color: transparent;
+  background-color: transparent;
+}
+
+#romanized-output-box.overlay-box2-active::placeholder {
+  color: #94a3b8;
+}
+
+#romanized-output-box.overlay-box2-active::selection {
+  background-color: rgba(16, 185, 129, 0.2);
+  color: transparent;
+}
+
+.romanized-number {
+  color: #4f46e5; /* Exact same blue/indigo as #furigana-backdrop rt */
+  font-weight: 600;
+}
+/* === END CHECKPOINT 6 (CSS) === */
+
+/* ==========================================================================
    Aspect-Ratio Responsive Layout (Portrait vs. Landscape)
    ========================================================================== */
 .dual-boxes-grid {
