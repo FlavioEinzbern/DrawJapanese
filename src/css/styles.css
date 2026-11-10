@@ -1,0 +1,218 @@
+/* ==========================================================================
+   === CHECKPOINT 1 (CSS): Box 1 Furigana Overlay vs. Furifont Rollback ===
+   To revert to Furifont: uncomment the @font-face + .furifont-ja rules below
+   and remove the .box1-shared-metrics / #furigana-backdrop rules.
+   ========================================================================== */
+/*
+@font-face {
+  font-family: 'Furifont Sans';
+  src: local('Furifont Sans VF'),
+       local('Furifont Sans'),
+       url('https://furifont.antfu.me/fonts/FurifontSans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+#text-output-box.furifont-ja {
+  font-family: 'Furifont Sans', 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
+  line-height: 1.85;
+  padding-top: 0.9rem;
+  font-variant-ligatures: common-ligatures contextual;
+  font-feature-settings: "liga" 1, "rclt" 1, "ccmp" 1;
+}
+*/
+
+/* Shared typography metrics so #text-output-box and #furigana-backdrop align 1:1 */
+.box1-shared-metrics {
+  font-family: 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', ui-monospace, SFMono-Regular, monospace;
+  font-size: 1.35rem;
+  font-weight: 500;
+  line-height: 2.15;
+  letter-spacing: 0.04em;
+  padding: 0.85rem 0.65rem 0.45rem 0.65rem;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  tab-size: 4;
+}
+
+/* ==========================================================================
+   === CHECKPOINT 4 (CSS): Auto-Growing 2-Line Boxes Without Scrollbars ===
+   ========================================================================== */
+.auto-grow-box {
+  min-height: 5.4rem; /* Default height for 2 lines of text + furigana headroom */
+  height: 5.4rem;
+  overflow: hidden !important;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.auto-grow-box::-webkit-scrollbar {
+  display: none;
+}
+/* === END CHECKPOINT 4 (CSS) === */
+
+/* When Japanese overlay mode is active, textarea text is transparent while caret stays visible */
+#text-output-box.overlay-ja-active {
+  color: transparent;
+  caret-color: #1e293b;
+  background-color: transparent;
+}
+
+#text-output-box.overlay-ja-active::selection {
+  background-color: rgba(99, 102, 241, 0.22);
+  color: transparent;
+}
+
+/* Ruby styling inside backdrop: absolute <rt> prevents long furigana from shifting character width */
+#furigana-backdrop ruby {
+  display: inline-block;
+  position: relative;
+  vertical-align: baseline;
+  line-height: 1;
+}
+
+#furigana-backdrop rt {
+  display: block;
+  position: absolute;
+  bottom: 104%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.44em;
+  font-weight: 600;
+  line-height: 1.1;
+  color: #4f46e5;
+  white-space: nowrap;
+  letter-spacing: normal;
+  pointer-events: none;
+  user-select: none;
+}
+
+#furigana-backdrop rp {
+  display: none;
+}
+/* === END CHECKPOINT 1 (CSS) === */
+
+/* ==========================================================================
+   Aspect-Ratio Responsive Layout (Portrait vs. Landscape)
+   ========================================================================== */
+.dual-boxes-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: 1fr;
+  align-items: stretch;
+}
+
+/* Landscape aspect ratio: keep Box 1 and Box 2 side by side */
+@media (orientation: landscape) {
+  .dual-boxes-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .canvas-viewport {
+    height: clamp(145px, 34vh, 260px);
+  }
+}
+
+/* Portrait aspect ratio: stack Box 1 & Box 2 and fit canvas + both boxes on screen without scrolling */
+@media (orientation: portrait) {
+  body {
+    min-height: 100dvh;
+  }
+  main {
+    padding-top: 0.35rem !important;
+    padding-bottom: 0.35rem !important;
+  }
+  main > * + * {
+    margin-top: 0.35rem !important;
+  }
+  .workspace-card {
+    padding: 0.5rem 0.65rem !important;
+  }
+  .workspace-card > * + * {
+    margin-top: 0.35rem !important;
+  }
+  .canvas-viewport {
+    height: clamp(105px, 22dvh, 195px);
+  }
+  .candidate-header {
+    margin-bottom: 0.15rem !important;
+  }
+  #candidates-container {
+    min-height: 34px !important;
+    padding: 0.15rem !important;
+  }
+  .candidate-btn {
+    padding: 0.15rem 0.6rem !important;
+    font-size: 0.95rem !important;
+    min-width: 36px !important;
+    border-radius: 0.6rem !important;
+  }
+  .dual-boxes-grid {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
+  .box-card {
+    padding: 0.45rem 0.65rem !important;
+  }
+  .box-card-header {
+    margin-bottom: 0.2rem !important;
+  }
+  .box1-shared-metrics {
+    font-size: 1.05rem;
+    line-height: 1.65;
+    padding: 0.4rem 0.5rem 0.15rem 0.5rem;
+  }
+  #furigana-backdrop rt {
+    bottom: 96%;
+    font-size: 0.42em;
+  }
+  .auto-grow-box {
+    min-height: 4rem; /* 64px: fits 2 lines in portrait without scrolling */
+    height: 4rem;
+  }
+  .box-footer {
+    margin-top: 0.25rem !important;
+    padding-top: 0.2rem !important;
+    min-height: 22px !important;
+  }
+}
+
+/* Prevent default gestures on touch canvas */
+#drawing-canvas {
+  touch-action: none;
+  cursor: crosshair;
+}
+
+/* Guide backgrounds */
+.cjk-grid {
+  background-image: 
+    linear-gradient(to right, rgba(203, 213, 225, 0.45) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(203, 213, 225, 0.45) 1px, transparent 1px);
+  background-size: 50% 50%;
+  background-position: center center;
+}
+
+.cyrillic-grid {
+  background-image: 
+    linear-gradient(to bottom, 
+      transparent 0%, 
+      transparent 24%, 
+      rgba(203, 213, 225, 0.5) 25%, 
+      transparent 26%, 
+      transparent 49%, 
+      rgba(148, 163, 184, 0.7) 50%, 
+      transparent 51%, 
+      transparent 74%, 
+      rgba(203, 213, 225, 0.5) 75%, 
+      transparent 76%
+    );
+  background-size: 100% 100%;
+}
+
+/* Candidate scrollbar styling */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multilingual Handwriting & Romanizer</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="./src/css/styles.css">
+
+  <!-- Chinese Pinyin Library -->
+  <script src="https://cdn.jsdelivr.net/npm/pinyin-pro@3.19.6/dist/index.js"></script>
+
+  <!-- Kuroshiro & Kuromoji for Japanese -->
+  <script src="https://cdn.jsdelivr.net/npm/kuroshiro@1.2.0/dist/kuroshiro.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/kuroshiro-analyzer-kuromoji@1.1.0/dist/kuroshiro-analyzer-kuromoji.min.js"></script>
+
+  <!-- === CHECKPOINT 5 (HEAD): Fix 3 Offline Recognition Engines (KanjiCanvas + HanziLookupJS) === -->
+  <script src="https://cdn.jsdelivr.net/gh/asdfjkl/kanjicanvas@master/docs/resources/javascript/kanji-canvas.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/gh/asdfjkl/kanjicanvas@master/docs/resources/javascript/ref-patterns.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/gh/gugray/HanziLookupJS@master/dist/hanzilookup.min.js" defer></script>
+  <!-- === END CHECKPOINT 5 (HEAD) === -->
+
+  <!-- Application Scripts (Loaded in order with defer) -->
+  <script src="./src/js/config-dictionaries.js" defer></script>
+  <script src="./src/js/romanizer.js" defer></script>
+  <script src="./src/js/canvas-handwriting.js" defer></script>
+  <script src="./src/js/main.js" defer></script>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans selection:bg-indigo-100 selection:text-indigo-800">
+
+  <!-- Ultra-Compact Header (Flags Only + Hover Status Light) -->
+  <header class="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-30">
+    <div class="max-w-5xl mx-auto px-4 flex items-center justify-between">
+      <div class="flex items-center space-x-2">
+        <!-- App Icon -->
+        <div class="w-7 h-7 rounded-lg bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white shadow-sm shrink-0">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+          </svg>
+        </div>
+
+        <!-- Flag-Only Language Navigation Tabs -->
+        <nav class="flex items-center space-x-1 -mb-px overflow-x-auto hide-scrollbar" id="lang-tabs">
+          <button data-lang="ja" title="Japanese (Kanji / Kana)" aria-label="Japanese" class="lang-tab active-tab py-1.5 px-3 text-xl leading-none border-b-2 border-indigo-600 text-indigo-600 transition-colors">
+            <span>🇯🇵</span>
+          </button>
+          <button data-lang="zh" title="Chinese (Hanzi / Pinyin)" aria-label="Chinese" class="lang-tab py-1.5 px-3 text-xl leading-none border-b-2 border-transparent text-slate-600 hover:border-slate-300 transition-colors">
+            <span>🇨🇳</span>
+          </button>
+          <button data-lang="ko" title="Korean (Hangul / RR)" aria-label="Korean" class="lang-tab py-1.5 px-3 text-xl leading-none border-b-2 border-transparent text-slate-600 hover:border-slate-300 transition-colors">
+            <span>🇰🇷</span>
+          </button>
+          <button data-lang="ru" title="Russian (Cyrillic / Latin)" aria-label="Russian" class="lang-tab py-1.5 px-3 text-xl leading-none border-b-2 border-transparent text-slate-600 hover:border-slate-300 transition-colors">
+            <span>🇷🇺</span>
+          </button>
+        </nav>
+      </div>
+      
+      <!-- Engine Status Light (Text Revealed Only on Mouseover) -->
+      <div id="status-badge" title="Loading Kuromoji dict..." class="group flex items-center text-xs font-medium p-1.5 hover:px-2.5 hover:py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 transition-all cursor-default">
+        <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
+        <span id="status-text" class="hidden group-hover:inline ml-1.5 whitespace-nowrap">Loading Kuromoji dict...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="max-w-5xl w-full mx-auto px-4 py-3 flex-1 flex flex-col space-y-3">
+
+    <!-- Top Drawing Workspace Card -->
+    <div class="workspace-card bg-white rounded-2xl border border-slate-200 shadow-sm p-3 sm:p-4 flex flex-col space-y-2.5">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <span class="text-xs uppercase font-bold tracking-wider text-slate-400" id="drawing-instructions">Draw Japanese Character</span>
+          <span id="recognizing-indicator" class="hidden text-xs text-indigo-600 font-medium animate-pulse">Recognizing...</span>
+        </div>
+        <div class="flex items-center space-x-2">
+          <button id="btn-undo" class="px-2.5 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center space-x-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+            <span>Undo Stroke</span>
+          </button>
+          <button id="btn-clear-canvas" class="px-2.5 py-1 text-xs font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors flex items-center space-x-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            <span>Clear Canvas</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Drawing Canvas Area -->
+      <div class="canvas-viewport relative w-full bg-slate-50/50 rounded-xl border border-slate-200 overflow-hidden flex items-center justify-center">
+        <div id="grid-guide" class="absolute inset-0 cjk-grid pointer-events-none"></div>
+        <canvas id="drawing-canvas" class="relative z-10 w-full h-full"></canvas>
+        <!-- Offscreen 256x256 Canvas for Fix 3 (KanjiCanvas Offline Recognition) -->
+        <canvas id="offline-kanji-canvas" width="256" height="256" class="hidden pointer-events-none"></canvas>
+      </div>
+
+      <!-- Candidate Selection Strip -->
+      <div>
+        <div class="candidate-header text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1 flex justify-between items-center">
+          <span>Recognition Candidates</span>
+          <span class="text-[10px] lowercase text-slate-400 font-normal">Click candidate to insert without focusing box</span>
+        </div>
+        <div id="candidates-container" class="flex items-center space-x-2 overflow-x-auto p-1 min-h-[42px] bg-slate-50 border border-slate-200/80 rounded-xl hide-scrollbar">
+          <span class="text-xs text-slate-400 italic px-3">Draw a character on the canvas above...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dual Textboxes Section (Synchronized Size, Side-by-Side in Landscape, Stacked in Portrait) -->
+    <div class="dual-boxes-grid">
+      
+      <!-- Box 1: Editable Character Input -->
+      <div class="box-card bg-white rounded-2xl border border-slate-200 shadow-sm p-3 flex flex-col justify-between">
+        <div>
+          <div class="box-card-header flex items-center justify-between mb-1.5">
+            <div class="flex items-center space-x-2">
+              <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+              <label for="text-output-box" class="text-xs font-bold uppercase tracking-wider text-slate-600">
+                Box 1: Character Text <span class="font-normal lowercase text-slate-400">(Editable · Synced Furigana)</span>
+              </label>
+            </div>
+            <div class="flex items-center space-x-1">
+              <button id="btn-copy-box1" title="Copy Text" class="px-2 py-1 text-xs text-slate-600 hover:text-indigo-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center space-x-1">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- === CHECKPOINT 2 & 4 (HTML): Auto-Growing Box 1 Overlay Wrapper === -->
+          <div id="box1-wrapper" class="auto-grow-box relative w-full bg-white border border-slate-200 rounded-xl focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-colors">
+            <!-- Synced Furigana Backdrop Layer -->
+            <div
+              id="furigana-backdrop"
+              aria-hidden="true"
+              class="box1-shared-metrics auto-grow-box absolute inset-0 w-full text-slate-800 pointer-events-none select-none"
+            ></div>
+
+            <!-- Interactive Textarea Layer -->
+            <textarea 
+              id="text-output-box" 
+              rows="2" 
+              lang="ja"
+              placeholder="Characters will appear here as you tap candidates, or type directly..." 
+              class="box1-shared-metrics auto-grow-box overlay-ja-active relative z-10 w-full text-slate-800 bg-transparent border-0 resize-none focus:outline-none block"
+            ></textarea>
+          </div>
+          <!-- === END CHECKPOINT 2 & 4 (HTML) === -->
+        </div>
+
+        <!-- Quick Editing Toolbar (Matched height with Box 2 footer) -->
+        <div class="box-footer mt-2 flex items-center justify-between pt-1.5 border-t border-slate-100 min-h-[30px]">
+          <div class="flex items-center space-x-1.5">
+            <button id="btn-add-space" class="px-2.5 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
+              Space ␣
+            </button>
+            <button id="btn-backspace" class="px-2.5 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
+              ⌫ Backspace
+            </button>
+          </div>
+          <button id="btn-clear-text" class="text-xs text-slate-400 hover:text-rose-600 transition-colors">
+            Clear All
+          </button>
+        </div>
+      </div>
+
+      <!-- Box 2: Read-Only Romanization Output -->
+      <div class="box-card bg-white rounded-2xl border border-slate-200 shadow-sm p-3 flex flex-col justify-between">
+        <div>
+          <div class="box-card-header flex items-center justify-between mb-1.5">
+            <div class="flex items-center space-x-2">
+              <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <label for="romanized-output-box" class="text-xs font-bold uppercase tracking-wider text-slate-600">
+                Box 2: <span id="romanization-label">Romaji (Hepburn)</span> <span class="font-normal lowercase text-slate-400">(Read-Only)</span>
+              </label>
+            </div>
+            <button id="btn-copy-box2" title="Copy Transliteration" class="px-2 py-1 text-xs text-slate-600 hover:text-emerald-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center space-x-1">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+              <span>Copy</span>
+            </button>
+          </div>
+
+          <textarea 
+            id="romanized-output-box" 
+            rows="2" 
+            readonly 
+            placeholder="Romanized pronunciation will appear here..." 
+            class="box1-shared-metrics auto-grow-box w-full text-slate-700 bg-slate-50/70 border border-slate-200 rounded-xl resize-none focus:outline-none cursor-default block"
+          ></textarea>
+        </div>
+
+        <div class="box-footer mt-2 flex items-center justify-between pt-1.5 border-t border-slate-100 text-[11px] text-slate-400 min-h-[30px]">
+          <span id="translit-mode-description">Hiragana, Katakana & Joyo Kanji to Romaji</span>
+          <span id="char-count">0 chars</span>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Notification Toast -->
+  <div id="toast" class="fixed bottom-6 right-6 bg-slate-900 text-white text-xs px-4 py-2 rounded-xl shadow-xl transform translate-y-12 opacity-0 transition-all duration-200 pointer-events-none z-50 flex items-center space-x-2">
+    <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+    <span id="toast-message">Copied to clipboard</span>
+  </div>
+
+</body>
+</html>
