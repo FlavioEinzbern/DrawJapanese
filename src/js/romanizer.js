@@ -105,7 +105,7 @@ async function ensureKanjiReadingsLoaded(str) {
   }
 }
 
-/* Fix A: Repair Kuromoji's path.join() URLs & normalize .dat.gz streams */
+/* Repair Kuromoji's path.join() URLs & normalize .dat.gz streams */
 let isDictLoaderPatched = false;
 function ensureGzippedDictLoader() {
   if (isDictLoaderPatched) return;
@@ -153,6 +153,82 @@ function ensureGzippedDictLoader() {
   };
 }
 
+/*
+ * Merge irregular Japanese counter tokens (e.g. 一人, 二人, 二日..十日, 二十日, 二十歳)
+ * when Kuromoji splits them before particles like だけ / ほど / くらい / ずつ.
+ */
+const PRECEDING_NUM_SURFACE_REGEX = /[0-9０-９零〇一二两三四五六七八九十百千万億亿]$/;
+
+function mergeIrregularCounterTokens(tokens) {
+  if (!Array.isArray(tokens) || tokens.length === 0) return tokens;
+  const result = [];
+  let i = 0;
+
+  while (i < tokens.length) {
+    const prevToken = result.length > 0 ? result[result.length - 1] : null;
+    const isPrecededByNumber = prevToken && (
+      prevToken.pos_detail_1 === '数' ||
+      PRECEDING_NUM_SURFACE_REGEX.test(prevToken.surface_form || '')
+    );
+
+    let matchedLen = 0;
+    let matchedSpec = null;
+    let combinedSurface = '';
+
+    if (!isPrecededByNumber) {
+      const maxSpan = Math.min(4, tokens.length - i);
+      for (let len = maxSpan; len >= 1; len--) {
+        let surf = '';
+        for (let k = 0; k < len; k++) {
+          surf += tokens[i + k].surface_form || '';
+        }
+        const spec = IRREGULAR_COUNTER_COMPOUNDS[surf];
+        if (spec) {
+          const nextToken = (i + len < tokens.length) ? tokens[i + len] : null;
+          const nextSurf = nextToken ? (nextToken.surface_form || '') : '';
+          if (spec.disallowNext && spec.disallowNext.test(nextSurf)) {
+            continue;
+          }
+          matchedLen = len;
+          matchedSpec = spec;
+          combinedSurface = surf;
+          break;
+        }
+      }
+    }
+
+    if (matchedSpec && matchedLen > 0) {
+      result.push({
+        ...tokens[i],
+        surface_form: combinedSurface,
+        pos: '名詞',
+        pos_detail_1: '一般',
+        pos_detail_2: '*',
+        pos_detail_3: '*',
+        basic_form: combinedSurface,
+        reading: matchedSpec.reading,
+        pronunciation: matchedSpec.pronunciation
+      });
+      i += matchedLen;
+    } else {
+      result.push(tokens[i]);
+      i++;
+    }
+  }
+
+  return result;
+}
+
+function patchAnalyzerForIrregularCounters(analyzer) {
+  if (!analyzer || typeof analyzer.parse !== 'function' || analyzer._irregularCountersPatched) return;
+  const origParse = analyzer.parse.bind(analyzer);
+  analyzer.parse = async function (str) {
+    const tokens = await origParse(str);
+    return mergeIrregularCounterTokens(tokens);
+  };
+  analyzer._irregularCountersPatched = true;
+}
+
 async function initKuroshiro() {
   ensureGzippedDictLoader();
   ensureBox2Backdrop();
@@ -181,6 +257,7 @@ async function initKuroshiro() {
         const ks = new KuroshiroClass();
         const analyzer = new KuromojiAnalyzerClass({ dictPath });
         await ks.init(analyzer);
+        patchAnalyzerForIrregularCounters(analyzer);
         return ks;
       })();
 
@@ -223,7 +300,7 @@ function escapeHtml(str) {
 }
 
 /* ==========================================================================
-   === CHECKPOINT 6 (JS): Multilingual Number Romanizer & Blue Box 2 Backdrop ===
+   Multilingual Number Romanizer & Blue Box 2 Backdrop
    ========================================================================== */
 let romanizedBackdrop = null;
 
@@ -478,17 +555,10 @@ function romanizeNumberByLang(rawToken, lang) {
   if (lang === 'ru') return numberToRussianRomaji(normalized);
   return normalized;
 }
-/* === END CHECKPOINT 6 (JS) === */
 
 /* ==========================================================================
-   === CHECKPOINT 7 & 8 (JS): Fix A — Native Kuroshiro Spaced Romaji on
-       Unsplit Text + Post-Processed Blue Numbers (Kanji-Only Furigana in Box 1) ===
-   To revert to Checkpoint 7 (DOM-derived romaji), uncomment deriveJapaneseRomajiFromFuriganaHtml.
+   Japanese Spaced Romaji Post-Processor & Fallback Furigana/Romaji
    ========================================================================== */
-/*
-function deriveJapaneseRomajiFromFuriganaHtml(furiganaHtml) { ... }
-*/
-
 const COUNTER_AFTER_NUMBER_MAP = {
   '年': { kana: 'ねん', romaji: 'nen' },
   '月': { kana: 'がつ', romaji: 'gatsu' },
@@ -553,6 +623,15 @@ function resolveFallbackKanjiAt(str, i) {
   return null;
 }
 
+function canUseFallbackCompoundAt(str, i, sub) {
+  const spec = IRREGULAR_COUNTER_COMPOUNDS[sub];
+  if (!spec) return true;
+  if (i > 0 && PRECEDING_NUMBER_REGEX.test(str[i - 1])) return false;
+  const rest = str.slice(i + sub.length);
+  if (spec.disallowNext && spec.disallowNext.test(rest)) return false;
+  return true;
+}
+
 /* Fallback Furigana HTML for Box 1: Furigana ONLY on Kanji (never on Arabic numbers) */
 function fallbackJapaneseFuriganaHtml(str) {
   let html = '';
@@ -568,7 +647,7 @@ function fallbackJapaneseFuriganaHtml(str) {
     let compoundFound = false;
     for (let len = 4; len >= 2; len--) {
       const sub = str.substr(i, len);
-      if (KANJI_FALLBACK[sub]) {
+      if (KANJI_FALLBACK[sub] && canUseFallbackCompoundAt(str, i, sub)) {
         html += `<ruby>${escapeHtml(sub)}<rt>${KANJI_FALLBACK[sub].kana}</rt></ruby>`;
         i += len;
         compoundFound = true;
@@ -590,12 +669,6 @@ function fallbackJapaneseFuriganaHtml(str) {
   return html.endsWith('\n') ? html + '\u200b' : html;
 }
 
-/*
- * Fix A (CHECKPOINT 8): Post-process Kuroshiro's native `mode: 'spaced'` Romaji output.
- * Kuroshiro has already converted the full unsplit sentence (preserving word spacing,
- * `は` -> `wa`, `へ` -> `e`, and `2026年` -> `2026 nen`). This replaces the remaining
- * digit tokens with their romanized pronunciation in blue.
- */
 function postProcessJapaneseRomajiNumbers(rawRomaji) {
   const parts = rawRomaji.split(/([0-9０-９]+)/g).filter(Boolean);
   let plainOut = '';
@@ -626,14 +699,12 @@ function postProcessJapaneseRomajiNumbers(rawRomaji) {
   };
 }
 
-/* Fallback Japanese Romanizer (when Kuromoji dict is still loading) with full string context & blue numbers */
 function fallbackJapaneseRomanizeWithBlueNumbers(str) {
   let plain = '';
   let html = '';
   let i = 0;
 
   while (i < str.length) {
-    // 1. Arabic digit run
     const digitMatch = str.slice(i).match(/^[0-9０-９]+/);
     if (digitMatch) {
       const rawDigits = digitMatch[0];
@@ -645,11 +716,10 @@ function fallbackJapaneseRomanizeWithBlueNumbers(str) {
       continue;
     }
 
-    // 2. Multi-char Kanji compound match
     let compoundFound = false;
     for (let len = 4; len >= 2; len--) {
       const sub = str.substr(i, len);
-      if (KANJI_FALLBACK[sub]) {
+      if (KANJI_FALLBACK[sub] && canUseFallbackCompoundAt(str, i, sub)) {
         const prefix = (plain && !/\s$/.test(plain)) ? ' ' : '';
         plain += prefix + KANJI_FALLBACK[sub].romaji + ' ';
         html += prefix + escapeHtml(KANJI_FALLBACK[sub].romaji) + ' ';
@@ -660,7 +730,6 @@ function fallbackJapaneseRomanizeWithBlueNumbers(str) {
     }
     if (compoundFound) continue;
 
-    // 3. Single Kanji match (with full string `i` index so `2026年` sees `2026` before `年`)
     const kanjiMatch = resolveFallbackKanjiAt(str, i);
     if (kanjiMatch) {
       const prefix = (plain && !/\s$/.test(plain)) ? ' ' : '';
@@ -676,7 +745,6 @@ function fallbackJapaneseRomanizeWithBlueNumbers(str) {
       continue;
     }
 
-    // 4. Sokuon (っ / ッ)
     if (str[i] === 'っ' || str[i] === 'ッ') {
       if (i + 1 < str.length) {
         const nextTwo = str.substr(i + 1, 2);
@@ -691,7 +759,6 @@ function fallbackJapaneseRomanizeWithBlueNumbers(str) {
       }
     }
 
-    // 5. Youon / Digraph (2-char Kana)
     const twoChar = str.substr(i, 2);
     if (KANA_MAP[twoChar]) {
       plain += KANA_MAP[twoChar];
@@ -700,7 +767,6 @@ function fallbackJapaneseRomanizeWithBlueNumbers(str) {
       continue;
     }
 
-    // 6. 1-char Kana
     if (KANA_MAP[str[i]]) {
       plain += KANA_MAP[str[i]];
       html += escapeHtml(KANA_MAP[str[i]]);
@@ -718,7 +784,6 @@ function fallbackJapaneseRomanizeWithBlueNumbers(str) {
     html: html.replace(/ +/g, ' ').trim()
   };
 }
-/* === END CHECKPOINT 7 & 8 (JS) === */
 
 /* ==========================================================================
    Korean Hangul & Standalone Jamo Phonological Processor
@@ -930,7 +995,6 @@ async function updateRomanization() {
   }
 
   if (currentLang === 'ja') {
-    // Immediate synchronous render from fallback cache
     furiganaBackdrop.innerHTML = fallbackJapaneseFuriganaHtml(text);
 
     if (!text.trim()) {
@@ -939,7 +1003,6 @@ async function updateRomanization() {
       return;
     }
 
-    // Primary Path (CHECKPOINT 8 - Fix A): Run Kuroshiro's native spaced Romaji & Furigana on the full unsplit string
     if (isKuroshiroReady && kuroshiroInstance) {
       try {
         const safeText = escapeHtml(text);
@@ -970,7 +1033,6 @@ async function updateRomanization() {
       }
     }
 
-    // Fallback Path: Full-string context romanizer + kanjiapi.dev
     const initialFallbackRom = fallbackJapaneseRomanizeWithBlueNumbers(text);
     setBox2Content(initialFallbackRom.plain, initialFallbackRom.html);
     autoResizeBoxes();
