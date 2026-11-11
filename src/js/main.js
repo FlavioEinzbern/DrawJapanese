@@ -1,4 +1,12 @@
 /* ==========================================================================
+   Visible Viewport Height Sync (Keeps UI Above Mobile Browser Toolbars)
+   ========================================================================== */
+function syncViewportHeight() {
+  const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  document.documentElement.style.setProperty('--app-height', `${Math.round(vh)}px`);
+}
+
+/* ==========================================================================
    Box Height Synchronization (Portrait 64px vs. Landscape 86px Base)
    ========================================================================== */
 function getMinBoxHeightPx() {
@@ -66,11 +74,17 @@ function initCanvasFullscreenToggle() {
     e.preventDefault();
     e.stopPropagation();
 
+    syncViewportHeight();
     const isExpanded = document.body.classList.toggle('canvas-expanded');
     btn.innerHTML = isExpanded ? COLLAPSE_ICON_SVG : EXPAND_ICON_SVG;
     btn.title = isExpanded ? 'Back to default view' : 'Expand canvas';
 
+    if (isExpanded) {
+      window.scrollTo(0, 0);
+    }
+
     requestAnimationFrame(() => {
+      syncViewportHeight();
       resizeCanvas();
       autoResizeBoxes();
     });
@@ -204,12 +218,24 @@ document.getElementById('btn-copy-box2').addEventListener('click', () => {
 /* ==========================================================================
    Lifecycle Initialization
    ========================================================================== */
-window.addEventListener('resize', resizeCanvas);
+function handleViewportResize() {
+  syncViewportHeight();
+  resizeCanvas();
+}
+
+window.addEventListener('resize', handleViewportResize);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', handleViewportResize);
+}
+
 window.addEventListener('DOMContentLoaded', () => {
+  syncViewportHeight();
   initCanvasFullscreenToggle();
   resizeCanvas();
   initKuroshiro();
 });
+
 window.addEventListener('load', () => {
+  syncViewportHeight();
   initOfflineRecognizers();
 });
