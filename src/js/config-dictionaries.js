@@ -64,7 +64,7 @@ const LANGUAGES = {
 let currentLang = 'ja';
 
 /* ==========================================================================
-   Japanese Kana & Starter Kanji Dictionaries
+   Japanese Kana, Irregular Counter & Starter Kanji Dictionaries
    ========================================================================== */
 const KANA_MAP = {
   // Standard Hiragana
@@ -158,8 +158,27 @@ const KANA_MAP = {
   'ー': '-'
 };
 
+// Irregular Japanese counters that Kuromoji splits when followed by particles like だけ / ほど / くらい
+const IRREGULAR_COUNTER_COMPOUNDS = {
+  '一人': { reading: 'ヒトリ', pronunciation: 'ヒトリ', disallowNext: /^(前|称|当|一|っ|ッ)/ },
+  '二人': { reading: 'フタリ', pronunciation: 'フタリ', disallowNext: /^(前|称|三脚|羽織|静)/ },
+  '二日': { reading: 'フツカ', pronunciation: 'フツカ', disallowNext: /^(酔)/ },
+  '三日': { reading: 'ミッカ', pronunciation: 'ミッカ', disallowNext: /^(月|天下|坊主)/ },
+  '四日': { reading: 'ヨッカ', pronunciation: 'ヨッカ', disallowNext: /^(市)/ },
+  '五日': { reading: 'イツカ', pronunciation: 'イツカ', disallowNext: /^(市)/ },
+  '六日': { reading: 'ムイカ', pronunciation: 'ムイカ', disallowNext: /^(町)/ },
+  '七日': { reading: 'ナノカ', pronunciation: 'ナノカ' },
+  '八日': { reading: 'ヨウカ', pronunciation: 'ヨウカ', disallowNext: /^(市|町|市場)/ },
+  '九日': { reading: 'ココノカ', pronunciation: 'ココノカ' },
+  '十日': { reading: 'トオカ', pronunciation: 'トオカ', disallowNext: /^(町|戎)/ },
+  '十四日': { reading: 'ジュウヨッカ', pronunciation: 'ジュウヨッカ' },
+  '二十日': { reading: 'ハツカ', pronunciation: 'ハツカ', disallowNext: /^(鼠|大根)/ },
+  '二十四日': { reading: 'ニジュウヨッカ', pronunciation: 'ニジュウヨッカ' },
+  '二十歳': { reading: 'ハタチ', pronunciation: 'ハタチ' }
+};
+
 const KANJI_FALLBACK = {
-  // === CHECKPOINT 6 (CONFIG): CJK Numeral Kanji Readings ===
+  // CJK Numeral Kanji Readings
   '零': { romaji: 'rei', kana: 'れい' },
   '〇': { romaji: 'maru', kana: 'まる' },
   '一': { romaji: 'ichi', kana: 'いち' },
@@ -176,7 +195,25 @@ const KANJI_FALLBACK = {
   '千': { romaji: 'sen', kana: 'せん' },
   '万': { romaji: 'man', kana: 'まん' },
   '億': { romaji: 'oku', kana: 'おく' },
-  // === END CHECKPOINT 6 (CONFIG) ===
+
+  // Irregular People, Day & Age Counters
+  '一人': { romaji: 'hitori', kana: 'ひとり' },
+  '二人': { romaji: 'futari', kana: 'ふたり' },
+  '二日': { romaji: 'futsuka', kana: 'ふつか' },
+  '三日': { romaji: 'mikka', kana: 'みっか' },
+  '四日': { romaji: 'yokka', kana: 'よっか' },
+  '五日': { romaji: 'itsuka', kana: 'いつか' },
+  '六日': { romaji: 'muika', kana: 'むいか' },
+  '七日': { romaji: 'nanoka', kana: 'なのか' },
+  '八日': { romaji: 'youka', kana: 'ようか' },
+  '九日': { romaji: 'kokonoka', kana: 'ここのか' },
+  '十日': { romaji: 'tooka', kana: 'とおか' },
+  '十四日': { romaji: 'juuyokka', kana: 'じゅうよっか' },
+  '二十日': { romaji: 'hatsuka', kana: 'はつか' },
+  '二十四日': { romaji: 'nijuuyokka', kana: 'にじゅうよっか' },
+  '二十歳': { romaji: 'hatachi', kana: 'はたち' },
+
+  // Common Starter Vocabulary
   '日本': { romaji: 'nihon', kana: 'にほん' },
   '東京': { romaji: 'toukyou', kana: 'とうきょう' },
   '私': { romaji: 'watashi', kana: 'わたし' },
@@ -209,7 +246,7 @@ const KANJI_FALLBACK = {
 };
 
 /* ==========================================================================
-   === CHECKPOINT 6 (CONFIG): Multilingual Number Dictionaries ===
+   Multilingual Number Dictionaries
    ========================================================================== */
 const CJK_DIGIT_VALUE = {
   '零': 0, '〇': 0, '一': 1, '二': 2, '两': 2, '三': 3, '四': 4,
@@ -231,7 +268,6 @@ const RU_ONES = ["nol'", "odin", "dva", "tri", "chetyre", "pyat'", "shest'", "se
 const RU_TEENS = ["desyat'", "odinnadtsat'", "dvenadtsat'", "trinadtsat'", "chetyrnadtsat'", "pyatnadtsat'", "shestnadtsat'", "semnadtsat'", "vosemnadtsat'", "devyatnadtsat'"];
 const RU_TENS = ["", "desyat'", "dvadtsat'", "tridtsat'", "sorok", "pyat'desyat", "shest'desyat", "sem'desyat", "vosem'desyat", "devyanosto"];
 const RU_HUNDREDS = ["", "sto", "dvesti", "trista", "chetyresta", "pyat'sot", "shest'sot", "sem'sot", "vosem'sot", "devyat'sot"];
-/* === END CHECKPOINT 6 (CONFIG) === */
 
 /* ==========================================================================
    Korean Hangul & Jamo Lookup Tables
