@@ -1,4 +1,10 @@
 /* ==========================================================================
+   Remove Box Placeholders Across All Views
+   ========================================================================== */
+textOutputBox.removeAttribute('placeholder');
+romanizedOutputBox.removeAttribute('placeholder');
+
+/* ==========================================================================
    Visible Viewport Height Sync (Keeps UI Above Mobile Browser Toolbars)
    ========================================================================== */
 function syncViewportHeight() {
@@ -59,13 +65,19 @@ function initCanvasFullscreenToggle() {
   const viewport = canvas.parentElement;
   if (!viewport || document.getElementById('btn-toggle-fullscreen')) return;
 
+  if (window.matchMedia('(orientation: portrait)').matches) {
+    document.body.classList.add('canvas-expanded');
+  }
+
+  const isInitiallyExpanded = document.body.classList.contains('canvas-expanded');
+
   const btn = document.createElement('button');
   btn.id = 'btn-toggle-fullscreen';
   btn.type = 'button';
-  btn.title = 'Expand canvas';
+  btn.title = isInitiallyExpanded ? 'Back to default view' : 'Expand canvas';
   btn.setAttribute('aria-label', 'Toggle expanded canvas');
   btn.className = 'absolute bottom-2.5 right-2.5 z-30 p-2 rounded-xl bg-white/90 hover:bg-white active:bg-indigo-50 text-slate-600 hover:text-indigo-600 border border-slate-200/90 shadow-sm transition-all flex items-center justify-center';
-  btn.innerHTML = EXPAND_ICON_SVG;
+  btn.innerHTML = isInitiallyExpanded ? COLLAPSE_ICON_SVG : EXPAND_ICON_SVG;
 
   btn.addEventListener('mousedown', (e) => e.stopPropagation());
   btn.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
