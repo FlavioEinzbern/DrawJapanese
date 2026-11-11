@@ -113,6 +113,67 @@
   font-weight: 600;
 }
 
+/* Float Recognition Candidates strip inside the bottom of the canvas */
+.workspace-card {
+  position: relative;
+}
+
+.workspace-card > div:last-child {
+  margin-top: 0 !important;
+  height: 0 !important;
+}
+
+.candidate-header {
+  display: none !important;
+}
+
+#candidates-container {
+  position: absolute;
+  bottom: 1.35rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 7rem);
+  min-height: 54px !important;
+  padding: 0.35rem 0.6rem !important;
+  z-index: 25;
+  background-color: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  border-radius: 1rem;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+}
+
+#candidates-container > span {
+  font-size: 0.85rem !important;
+  padding: 0 0.75rem !important;
+}
+
+#candidates-container .candidate-btn {
+  padding: 0.45rem 0.95rem !important;
+  font-size: 1.35rem !important;
+  min-width: 48px !important;
+  min-height: 44px !important;
+  border-radius: 0.75rem !important;
+}
+
+/* Enlarged Romanization Popup inside the canvas */
+#canvas-romanization-popup > div {
+  padding: 1.75rem 3rem;
+  border-radius: 1.75rem;
+  box-shadow: 0 20px 35px -10px rgba(15, 23, 42, 0.18);
+}
+
+#canvas-popup-char {
+  font-size: clamp(1.5rem, 4vmin, 2.5rem);
+  margin-bottom: 0.5rem;
+}
+
+#canvas-popup-romaji {
+  font-size: clamp(3.25rem, 11vmin, 6.5rem);
+  line-height: 1.15;
+}
+
 /* Responsive orientation layout (Portrait vs. Landscape) */
 .dual-boxes-grid {
   display: grid;
@@ -122,11 +183,15 @@
 }
 
 @media (orientation: landscape) {
+  header > div.max-w-5xl,
+  body:not(.canvas-expanded) main {
+    max-width: 1540px;
+  }
   .dual-boxes-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .canvas-viewport {
-    height: clamp(145px, 34vh, 260px);
+    height: clamp(180px, 56vh, 550px);
   }
 }
 
@@ -148,19 +213,18 @@
     margin-top: 0.35rem !important;
   }
   .canvas-viewport {
-    height: clamp(105px, 22svh, 195px);
+    height: clamp(135px, 26svh, 220px);
   }
-  .candidate-header {
-    margin-bottom: 0.15rem !important;
+  body:not(.canvas-expanded) #candidates-container {
+    bottom: 0.8rem;
+    min-height: 40px !important;
+    padding: 0.2rem 0.45rem !important;
   }
-  #candidates-container {
+  body:not(.canvas-expanded) #candidates-container .candidate-btn {
+    padding: 0.2rem 0.65rem !important;
+    font-size: 1.05rem !important;
+    min-width: 38px !important;
     min-height: 34px !important;
-    padding: 0.15rem !important;
-  }
-  .candidate-btn {
-    padding: 0.15rem 0.6rem !important;
-    font-size: 0.95rem !important;
-    min-width: 36px !important;
     border-radius: 0.6rem !important;
   }
   .dual-boxes-grid {
@@ -220,7 +284,6 @@ body.canvas-expanded main {
 }
 
 body.canvas-expanded .workspace-card {
-  position: relative;
   flex: 1 1 0%;
   min-height: 0;
   display: flex;
@@ -233,44 +296,8 @@ body.canvas-expanded .canvas-viewport {
   min-height: 0;
 }
 
-/* Float mobile-friendly Recognition Candidates strip inside the bottom of the canvas in full screen */
-body.canvas-expanded .workspace-card > div:last-child {
-  margin-top: 0 !important;
-  height: 0 !important;
-}
-
-body.canvas-expanded .candidate-header {
-  display: none !important;
-}
-
 body.canvas-expanded #candidates-container {
-  position: absolute;
   bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-  left: 50%;
-  transform: translateX(-50%);
-  width: max-content;
-  max-width: calc(100% - 7rem);
-  min-height: 54px !important;
-  padding: 0.35rem 0.6rem !important;
-  z-index: 25;
-  background-color: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(203, 213, 225, 0.9);
-  border-radius: 1rem;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
-}
-
-body.canvas-expanded #candidates-container > span {
-  font-size: 0.85rem !important;
-  padding: 0 0.75rem !important;
-}
-
-body.canvas-expanded #candidates-container .candidate-btn {
-  padding: 0.45rem 0.95rem !important;
-  font-size: 1.35rem !important;
-  min-width: 48px !important;
-  min-height: 44px !important;
-  border-radius: 0.75rem !important;
 }
 
 body.canvas-expanded #btn-toggle-fullscreen {
@@ -299,23 +326,6 @@ body.canvas-expanded #btn-toggle-fullscreen {
   body.canvas-expanded #btn-toggle-fullscreen {
     bottom: 0.65rem;
   }
-}
-
-/* Enlarge Romanization Popup in full screen mode */
-body.canvas-expanded #canvas-romanization-popup > div {
-  padding: 1.75rem 3rem;
-  border-radius: 1.75rem;
-  box-shadow: 0 20px 35px -10px rgba(15, 23, 42, 0.18);
-}
-
-body.canvas-expanded #canvas-popup-char {
-  font-size: clamp(1.5rem, 4vmin, 2.5rem);
-  margin-bottom: 0.5rem;
-}
-
-body.canvas-expanded #canvas-popup-romaji {
-  font-size: clamp(3.25rem, 11vmin, 6.5rem);
-  line-height: 1.15;
 }
 
 /* Canvas and scrollbar utilities */
