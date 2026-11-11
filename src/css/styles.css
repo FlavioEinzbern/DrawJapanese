@@ -277,6 +277,30 @@ body.canvas-expanded #btn-toggle-fullscreen {
   bottom: calc(0.65rem + env(safe-area-inset-bottom, 0px));
 }
 
+/* Portrait Fullscreen: Lock canvas to 4:5 aspect ratio so it never hides behind mobile browser bars */
+@media (orientation: portrait) {
+  body.canvas-expanded main,
+  body.canvas-expanded .workspace-card {
+    flex: 0 0 auto;
+  }
+
+  body.canvas-expanded .canvas-viewport {
+    flex: 0 0 auto;
+    width: 100%;
+    aspect-ratio: 4 / 5;
+    height: auto !important;
+    max-height: calc(var(--app-height, 100svh) - 7.5rem);
+  }
+
+  body.canvas-expanded #candidates-container {
+    bottom: 0.9rem;
+  }
+
+  body.canvas-expanded #btn-toggle-fullscreen {
+    bottom: 0.65rem;
+  }
+}
+
 /* Enlarge Romanization Popup in full screen mode */
 body.canvas-expanded #canvas-romanization-popup > div {
   padding: 1.75rem 3rem;
