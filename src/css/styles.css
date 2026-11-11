@@ -144,6 +144,10 @@
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
 }
 
+#candidates-container.hidden {
+  display: none !important;
+}
+
 #candidates-container > span {
   font-size: 0.85rem !important;
   padding: 0 0.75rem !important;
@@ -213,7 +217,7 @@
     margin-top: 0.35rem !important;
   }
   .canvas-viewport {
-    height: clamp(135px, 26svh, 220px);
+    height: clamp(180px, 33svh, 285px);
   }
   body:not(.canvas-expanded) #candidates-container {
     bottom: 0.8rem;
@@ -316,7 +320,7 @@ body.canvas-expanded #btn-toggle-fullscreen {
     width: 100%;
     aspect-ratio: 2 / 3;
     height: auto !important;
-    max-height: calc(var(--app-height, 100svh) - 7.5rem);
+    max-height: calc(var(--app-height, 100svh) - 5.5rem);
   }
 
   body.canvas-expanded #candidates-container {
