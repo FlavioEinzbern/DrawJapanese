@@ -57,6 +57,7 @@ function getCoords(e) {
 
 function startDrawing(e) {
   e.preventDefault();
+  hideCanvasRomanizationPopup();
   clearTimeout(recognizeTimeout);
   isDrawing = true;
   strokeStartTime = Date.now();
@@ -120,10 +121,7 @@ function undoLastStroke() {
 }
 
 /* ==========================================================================
-   === CHECKPOINT 5 (JS): VPN-Resilient Handwriting Recognition ===
-   - Fix 1: Multi-Endpoint Fallback Chain (Direct + Google Mirror + Relay Proxy)
-   - Fix 2: Sanitized `device` payload & stripped Referrer/Credentials
-   - Fix 3: Offline Client-Side Recognition (KanjiCanvas + HanziLookupJS)
+   VPN-Resilient Handwriting Recognition (Multi-Endpoint + Offline Fallback)
    ========================================================================== */
 let isKanjiCanvasInitialized = false;
 let isHanziLookupOrigReady = false;
@@ -298,8 +296,88 @@ async function fetchHandwritingCandidates() {
 }
 
 /* ==========================================================================
-   Candidate Rendering & Insertion (Without Highlighting Box 1)
+   Candidate Rendering, Insertion & Canvas Romanization Popup
    ========================================================================== */
+let canvasPopupEl = null;
+let canvasPopupRequestId = 0;
+
+function ensureCanvasPopupElement() {
+  if (canvasPopupEl) return canvasPopupEl;
+  const viewport = canvas.parentElement;
+  if (!viewport) return null;
+
+  canvasPopupEl = document.createElement('div');
+  canvasPopupEl.id = 'canvas-romanization-popup';
+  canvasPopupEl.className = 'hidden absolute inset-0 z-20 flex items-center justify-center pointer-events-none select-none p-4';
+  canvasPopupEl.innerHTML = `
+    <div class="bg-white/95 backdrop-blur-sm border border-slate-200 shadow-lg rounded-2xl px-6 py-3.5 flex flex-col items-center justify-center max-w-[90%] text-center">
+      <span id="canvas-popup-char" class="text-xs font-medium text-slate-400 mb-0.5"></span>
+      <span id="canvas-popup-romaji" class="text-2xl sm:text-3xl font-bold text-slate-800 tracking-wide break-words"></span>
+    </div>
+  `;
+  viewport.appendChild(canvasPopupEl);
+  return canvasPopupEl;
+}
+
+function hideCanvasRomanizationPopup() {
+  canvasPopupRequestId++;
+  if (canvasPopupEl) {
+    canvasPopupEl.classList.add('hidden');
+  }
+  document.removeEventListener('mousedown', hideCanvasRomanizationPopup, true);
+  document.removeEventListener('touchstart', hideCanvasRomanizationPopup, true);
+}
+
+async function getSingleCandidateRomanization(cand) {
+  if (!cand || !cand.trim()) return { plain: '', html: '' };
+
+  if (currentLang === 'ja') {
+    if (typeof isKuroshiroReady !== 'undefined' && isKuroshiroReady && kuroshiroInstance) {
+      try {
+        const rawRomaji = await kuroshiroInstance.convert(cand, {
+          to: 'romaji',
+          mode: 'spaced',
+          romajiSystem: 'hepburn'
+        });
+        return postProcessJapaneseRomajiNumbers(rawRomaji);
+      } catch (e) {
+        console.warn('Popup Kuroshiro conversion error:', e);
+      }
+    }
+    await ensureKanjiReadingsLoaded(cand);
+    return fallbackJapaneseRomanizeWithBlueNumbers(cand);
+  }
+
+  return await romanizeNonJapaneseTextAndNumbers(cand, currentLang);
+}
+
+async function showCanvasRomanizationPopup(cand) {
+  const popup = ensureCanvasPopupElement();
+  if (!popup) return;
+
+  const reqId = ++canvasPopupRequestId;
+  const charEl = popup.querySelector('#canvas-popup-char');
+  const romajiEl = popup.querySelector('#canvas-popup-romaji');
+
+  const romResult = await getSingleCandidateRomanization(cand);
+  if (reqId !== canvasPopupRequestId) return;
+
+  const displayHtml = romResult.html || escapeHtml(cand);
+  charEl.textContent = cand;
+  romajiEl.innerHTML = displayHtml;
+  popup.classList.remove('hidden');
+
+  // Dismiss popup on the next click or tap anywhere on the page
+  document.removeEventListener('mousedown', hideCanvasRomanizationPopup, true);
+  document.removeEventListener('touchstart', hideCanvasRomanizationPopup, true);
+  setTimeout(() => {
+    if (reqId === canvasPopupRequestId) {
+      document.addEventListener('mousedown', hideCanvasRomanizationPopup, true);
+      document.addEventListener('touchstart', hideCanvasRomanizationPopup, true);
+    }
+  }, 0);
+}
+
 function renderCandidates(candidates) {
   candidatesContainer.innerHTML = '';
   if (!candidates || candidates.length === 0) {
@@ -319,8 +397,10 @@ function renderCandidates(candidates) {
 
     btn.addEventListener('click', (e) => {
       e.preventDefault();
+      e.stopPropagation();
       insertCharacter(cand);
       clearCanvas();
+      showCanvasRomanizationPopup(cand);
     });
 
     candidatesContainer.appendChild(btn);
