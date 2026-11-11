@@ -6,6 +6,21 @@ let currentStroke = { x: [], y: [], t: [] };
 let isDrawing = false;
 let strokeStartTime = 0;
 let recognizeTimeout = null;
+let isInitialCandidateHintDismissed = false;
+
+function dismissInitialCandidateHint() {
+  if (isInitialCandidateHintDismissed) return;
+  isInitialCandidateHintDismissed = true;
+  if (!candidatesContainer.querySelector('.candidate-btn')) {
+    candidatesContainer.innerHTML = '';
+    candidatesContainer.classList.add('hidden');
+  }
+  document.removeEventListener('mousedown', dismissInitialCandidateHint, true);
+  document.removeEventListener('touchstart', dismissInitialCandidateHint, true);
+}
+
+document.addEventListener('mousedown', dismissInitialCandidateHint, true);
+document.addEventListener('touchstart', dismissInitialCandidateHint, true);
 
 function resizeCanvas() {
   const rect = canvas.getBoundingClientRect();
@@ -57,6 +72,7 @@ function getCoords(e) {
 
 function startDrawing(e) {
   e.preventDefault();
+  dismissInitialCandidateHint();
   hideCanvasRomanizationPopup();
   clearTimeout(recognizeTimeout);
   isDrawing = true;
@@ -367,7 +383,6 @@ async function showCanvasRomanizationPopup(cand) {
   romajiEl.innerHTML = displayHtml;
   popup.classList.remove('hidden');
 
-  // Dismiss popup on the next click or tap anywhere on the page
   document.removeEventListener('mousedown', hideCanvasRomanizationPopup, true);
   document.removeEventListener('touchstart', hideCanvasRomanizationPopup, true);
   setTimeout(() => {
@@ -381,9 +396,17 @@ async function showCanvasRomanizationPopup(cand) {
 function renderCandidates(candidates) {
   candidatesContainer.innerHTML = '';
   if (!candidates || candidates.length === 0) {
-    candidatesContainer.innerHTML = '<span class="text-xs text-slate-400 italic px-3">Draw a character on the canvas above...</span>';
+    if (isInitialCandidateHintDismissed) {
+      candidatesContainer.classList.add('hidden');
+    } else {
+      candidatesContainer.classList.remove('hidden');
+      candidatesContainer.innerHTML = '<span class="text-xs text-slate-400 italic px-3">Draw a character on the canvas above...</span>';
+    }
     return;
   }
+
+  isInitialCandidateHintDismissed = true;
+  candidatesContainer.classList.remove('hidden');
 
   candidates.forEach((cand) => {
     const btn = document.createElement('button');
