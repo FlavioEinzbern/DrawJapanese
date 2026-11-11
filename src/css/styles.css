@@ -195,6 +195,96 @@
   }
 }
 
+/* Expanded Canvas ("Full Screen" Viewport) Mode */
+body.canvas-expanded {
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+body.canvas-expanded .dual-boxes-grid {
+  display: none !important;
+}
+
+body.canvas-expanded main {
+  flex: 1 1 0%;
+  min-height: 0;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+body.canvas-expanded .workspace-card {
+  position: relative;
+  flex: 1 1 0%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+body.canvas-expanded .canvas-viewport {
+  flex: 1 1 0%;
+  height: auto !important;
+  min-height: 0;
+}
+
+/* Float mobile-friendly Recognition Candidates strip inside the bottom of the canvas in full screen */
+body.canvas-expanded .workspace-card > div:last-child {
+  margin-top: 0 !important;
+  height: 0 !important;
+}
+
+body.canvas-expanded .candidate-header {
+  display: none !important;
+}
+
+body.canvas-expanded #candidates-container {
+  position: absolute;
+  bottom: 1.15rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 7rem);
+  min-height: 54px !important;
+  padding: 0.35rem 0.6rem !important;
+  z-index: 25;
+  background-color: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  border-radius: 1rem;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+}
+
+body.canvas-expanded #candidates-container > span {
+  font-size: 0.85rem !important;
+  padding: 0 0.75rem !important;
+}
+
+body.canvas-expanded #candidates-container .candidate-btn {
+  padding: 0.45rem 0.95rem !important;
+  font-size: 1.35rem !important;
+  min-width: 48px !important;
+  min-height: 44px !important;
+  border-radius: 0.75rem !important;
+}
+
+/* Enlarge Romanization Popup in full screen mode */
+body.canvas-expanded #canvas-romanization-popup > div {
+  padding: 1.75rem 3rem;
+  border-radius: 1.75rem;
+  box-shadow: 0 20px 35px -10px rgba(15, 23, 42, 0.18);
+}
+
+body.canvas-expanded #canvas-popup-char {
+  font-size: clamp(1.5rem, 4vmin, 2.5rem);
+  margin-bottom: 0.5rem;
+}
+
+body.canvas-expanded #canvas-popup-romaji {
+  font-size: clamp(3.25rem, 11vmin, 6.5rem);
+  line-height: 1.15;
+}
+
 /* Canvas and scrollbar utilities */
 #drawing-canvas {
   touch-action: none;
