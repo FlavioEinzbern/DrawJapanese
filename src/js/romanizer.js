@@ -2,6 +2,7 @@
    Language Engine & Romanization Handlers (Kuroshiro + Kuromoji + kanjiapi.dev)
    ========================================================================== */
 let kuroshiroInstance = null;
+let kuroshiroAnalyzer = null;
 let isKuroshiroReady = false;
 
 function katakanaToHiragana(str) {
@@ -154,10 +155,13 @@ function ensureGzippedDictLoader() {
 }
 
 /*
- * Merge irregular Japanese counter tokens (e.g. 一人, 二人, 二日..十日, 二十日, 二十歳)
- * when Kuromoji splits them before particles like だけ / ほど / くらい / ずつ.
+ * 1. Merge irregular Japanese counter tokens (e.g. 一人, 二人, 二日..十日, 二十日, 二十歳)
+ *    when Kuromoji splits them before particles like だけ / ほど / くらい / ずつ.
+ * 2. Apply Japanese postposition grammar rules to は (ha vs. wa) and へ (he vs. e),
+ *    tagging true particles so Box 1 renders <ruby>は<rt>わ</rt></ruby> and <ruby>へ<rt>え</rt></ruby>.
  */
 const PRECEDING_NUM_SURFACE_REGEX = /[0-9０-９零〇一二两三四五六七八九十百千万億亿]$/;
+const CLAUSE_BREAK_END_REGEX = /[\s\u3000、。，．・：；！？「『（［｛〈《【〔…‥〜～.,!?;:'"(\[{/\\]$/;
 
 function mergeIrregularCounterTokens(tokens) {
   if (!Array.isArray(tokens) || tokens.length === 0) return tokens;
@@ -219,14 +223,149 @@ function mergeIrregularCounterTokens(tokens) {
   return result;
 }
 
-function patchAnalyzerForIrregularCounters(analyzer) {
-  if (!analyzer || typeof analyzer.parse !== 'function' || analyzer._irregularCountersPatched) return;
+function hasPrecedingWordForParticle(tokens, index) {
+  if (index <= 0) return false;
+  const prev = tokens[index - 1];
+  if (!prev || prev._wasDemotedParticle) return false;
+
+  const prevSurf = prev.surface_form || '';
+  if (!prevSurf || !prevSurf.trim()) return false;
+  if (CLAUSE_BREAK_END_REGEX.test(prevSurf)) return false;
+
+  if (prev.pos === '記号') {
+    // Allow particles immediately after closing quotes/brackets (e.g. 「私」は, （日本）へ)
+    if (/^[」』）］｝〉》】〕"')\]}]+$/.test(prevSurf)) {
+      return index >= 2 && hasPrecedingWordForParticle(tokens, index - 1);
+    }
+    return false;
+  }
+
+  return true;
+}
+
+function applyParticleGrammarRules(tokens) {
+  if (!Array.isArray(tokens) || tokens.length === 0) return tokens;
+  const result = tokens.map(t => ({ ...t }));
+
+  for (let i = 0; i < result.length; i++) {
+    const t = result[i];
+    const surf = t.surface_form || '';
+
+    if (surf === 'は' && (t.pos === '助詞' || t.pronunciation === 'ワ')) {
+      if (hasPrecedingWordForParticle(result, i)) {
+        t.reading = 'ハ';
+        t.pronunciation = 'ワ';
+        t._isParticleWa = true;
+      } else {
+        t.pos = '名詞';
+        t.pos_detail_1 = '一般';
+        t.reading = 'ハ';
+        t.pronunciation = 'ハ';
+        t._isParticleWa = false;
+        t._wasDemotedParticle = true;
+      }
+    } else if (surf === 'へ' && (t.pos === '助詞' || t.pronunciation === 'エ')) {
+      if (hasPrecedingWordForParticle(result, i)) {
+        t.reading = 'ヘ';
+        t.pronunciation = 'エ';
+        t._isParticleE = true;
+      } else {
+        t.pos = '名詞';
+        t.pos_detail_1 = '一般';
+        t.reading = 'ヘ';
+        t.pronunciation = 'ヘ';
+        t._isParticleE = false;
+        t._wasDemotedParticle = true;
+      }
+    } else if (
+      surf.length > 1 &&
+      surf.endsWith('は') &&
+      (t.reading || '').endsWith('ハ') &&
+      (t.pronunciation || '').endsWith('ワ')
+    ) {
+      t._hasTrailingWa = true;
+    }
+  }
+
+  return result;
+}
+
+let preParsedTokensOverride = null;
+
+function patchKuromojiAnalyzer(analyzer) {
+  if (!analyzer || typeof analyzer.parse !== 'function' || analyzer._customRulesPatched) return;
   const origParse = analyzer.parse.bind(analyzer);
   analyzer.parse = async function (str) {
-    const tokens = await origParse(str);
-    return mergeIrregularCounterTokens(tokens);
+    if (preParsedTokensOverride) {
+      const override = preParsedTokensOverride;
+      preParsedTokensOverride = null;
+      return override;
+    }
+    const rawTokens = await origParse(str);
+    const mergedTokens = mergeIrregularCounterTokens(rawTokens);
+    return applyParticleGrammarRules(mergedTokens);
   };
-  analyzer._irregularCountersPatched = true;
+  analyzer._customRulesPatched = true;
+}
+
+async function convertTokensWithKuroshiro(tokens, options) {
+  if (!tokens || tokens.length === 0) return '';
+  const segmentStr = tokens.map(t => t.surface_form || '').join('');
+  if (!segmentStr) return '';
+  preParsedTokensOverride = tokens.map(t => ({ ...t }));
+  return await kuroshiroInstance.convert(segmentStr, options);
+}
+
+async function buildFuriganaHtmlFromTokens(tokens) {
+  let html = '';
+  let buffer = [];
+
+  const flushBuffer = async () => {
+    if (buffer.length === 0) return;
+    const safeBuffer = buffer.map(tok => ({
+      ...tok,
+      surface_form: escapeHtml(tok.surface_form || '')
+    }));
+    buffer = [];
+    html += await convertTokensWithKuroshiro(safeBuffer, {
+      to: 'hiragana',
+      mode: 'furigana'
+    });
+  };
+
+  for (const tok of tokens) {
+    if (tok._isParticleWa) {
+      await flushBuffer();
+      html += '<ruby>は<rt>わ</rt></ruby>';
+    } else if (tok._isParticleE) {
+      await flushBuffer();
+      html += '<ruby>へ<rt>え</rt></ruby>';
+    } else if (tok._hasTrailingWa) {
+      await flushBuffer();
+      const prefixSurf = tok.surface_form.slice(0, -1);
+      const prefixRead = (tok.reading || '').slice(0, -1);
+      const prefixPron = (tok.pronunciation || '').slice(0, -1);
+      if (KANJI_REGEX.test(prefixSurf)) {
+        html += await convertTokensWithKuroshiro([{
+          ...tok,
+          surface_form: escapeHtml(prefixSurf),
+          reading: prefixRead,
+          pronunciation: prefixPron
+        }], {
+          to: 'hiragana',
+          mode: 'furigana'
+        });
+      } else {
+        html += escapeHtml(prefixSurf);
+      }
+      html += '<ruby>は<rt>わ</rt></ruby>';
+    } else {
+      buffer.push(tok);
+    }
+  }
+
+  await flushBuffer();
+  return html;
 }
 
 async function initKuroshiro() {
@@ -257,11 +396,13 @@ async function initKuroshiro() {
         const ks = new KuroshiroClass();
         const analyzer = new KuromojiAnalyzerClass({ dictPath });
         await ks.init(analyzer);
-        patchAnalyzerForIrregularCounters(analyzer);
-        return ks;
+        patchKuromojiAnalyzer(analyzer);
+        return { ks, analyzer };
       })();
 
-      kuroshiroInstance = await Promise.race([loadPromise, timeoutPromise]);
+      const loaded = await Promise.race([loadPromise, timeoutPromise]);
+      kuroshiroInstance = loaded.ks;
+      kuroshiroAnalyzer = loaded.analyzer;
       isKuroshiroReady = true;
       setEngineStatus('ready', 'Kuroshiro + Kuromoji Ready');
       updateRomanization();
@@ -325,13 +466,6 @@ function ensureBox2Backdrop() {
 
   romanizedOutputBox.classList.add('overlay-box2-active', 'relative', 'z-10');
   romanizedOutputBox.classList.remove('bg-slate-50/70', 'border', 'border-slate-200');
-
-  const clearBtn = document.getElementById('btn-clear-text');
-  if (clearBtn) {
-    clearBtn.addEventListener('click', () => {
-      if (romanizedBackdrop) romanizedBackdrop.innerHTML = '';
-    });
-  }
 }
 
 function setBox2Content(plainText, htmlText) {
@@ -995,28 +1129,22 @@ async function updateRomanization() {
   }
 
   if (currentLang === 'ja') {
-    furiganaBackdrop.innerHTML = fallbackJapaneseFuriganaHtml(text);
-
     if (!text.trim()) {
+      furiganaBackdrop.innerHTML = escapeHtml(text);
       setBox2Content('', '');
       autoResizeBoxes();
       return;
     }
 
-    if (isKuroshiroReady && kuroshiroInstance) {
+    if (isKuroshiroReady && kuroshiroInstance && kuroshiroAnalyzer) {
       try {
-        const safeText = escapeHtml(text);
-        const [furiganaHtml, rawRomaji] = await Promise.all([
-          kuroshiroInstance.convert(safeText, {
-            to: 'hiragana',
-            mode: 'furigana'
-          }),
-          kuroshiroInstance.convert(text, {
-            to: 'romaji',
-            mode: 'spaced',
-            romajiSystem: 'hepburn'
-          })
-        ]);
+        const tokens = await kuroshiroAnalyzer.parse(text);
+        const furiganaHtml = await buildFuriganaHtmlFromTokens(tokens);
+        const rawRomaji = await convertTokensWithKuroshiro(tokens, {
+          to: 'romaji',
+          mode: 'spaced',
+          romajiSystem: 'hepburn'
+        });
 
         if (conversionId !== currentConversionId || currentLang !== 'ja') return;
 
@@ -1033,6 +1161,7 @@ async function updateRomanization() {
       }
     }
 
+    furiganaBackdrop.innerHTML = fallbackJapaneseFuriganaHtml(text);
     const initialFallbackRom = fallbackJapaneseRomanizeWithBlueNumbers(text);
     setBox2Content(initialFallbackRom.plain, initialFallbackRom.html);
     autoResizeBoxes();
