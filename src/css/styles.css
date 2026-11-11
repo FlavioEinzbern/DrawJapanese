@@ -99,10 +99,6 @@
   background-color: transparent;
 }
 
-#romanized-output-box.overlay-box2-active::placeholder {
-  color: #94a3b8;
-}
-
 #romanized-output-box.overlay-box2-active::selection {
   background-color: rgba(16, 185, 129, 0.2);
   color: transparent;
@@ -176,6 +172,208 @@
 #canvas-popup-romaji {
   font-size: clamp(3.25rem, 11vmin, 6.5rem);
   line-height: 1.15;
+}
+
+/* ==========================================================================
+   Dark Mode Theme (Default Active via body.dark-mode)
+   ========================================================================== */
+body.dark-mode {
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+
+body.dark-mode header {
+  background-color: #1e293b;
+  border-color: #334155;
+}
+
+body.dark-mode .lang-tab:not(.active-tab) {
+  color: #94a3b8;
+}
+
+body.dark-mode .lang-tab:not(.active-tab):hover {
+  color: #f1f5f9;
+}
+
+body.dark-mode .lang-tab.active-tab {
+  color: #818cf8;
+  border-color: #818cf8;
+}
+
+body.dark-mode #btn-theme-toggle {
+  background-color: #334155;
+  border-color: #475569;
+  color: #fbbf24;
+}
+
+body.dark-mode #btn-theme-toggle:hover {
+  background-color: #475569;
+}
+
+body.dark-mode #status-badge {
+  background-color: #0f172a;
+  border-color: #334155;
+  color: #cbd5e1;
+}
+
+body.dark-mode .workspace-card,
+body.dark-mode .box-card {
+  background-color: #1e293b;
+  border-color: #334155;
+}
+
+body.dark-mode #drawing-instructions,
+body.dark-mode .box-card-header h2 {
+  color: #e2e8f0;
+}
+
+body.dark-mode #recognizing-indicator {
+  color: #818cf8;
+}
+
+body.dark-mode #char-count {
+  background-color: #0f172a;
+  color: #94a3b8;
+}
+
+body.dark-mode #btn-undo,
+body.dark-mode #btn-add-space,
+body.dark-mode #btn-backspace {
+  background-color: #334155;
+  color: #e2e8f0;
+}
+
+body.dark-mode #btn-undo:hover,
+body.dark-mode #btn-add-space:hover,
+body.dark-mode #btn-backspace:hover {
+  background-color: #475569;
+  color: #ffffff;
+}
+
+body.dark-mode #btn-clear-canvas,
+body.dark-mode #btn-clear-text {
+  background-color: rgba(244, 63, 94, 0.14);
+  color: #fda4af;
+}
+
+body.dark-mode #btn-clear-canvas:hover,
+body.dark-mode #btn-clear-text:hover {
+  background-color: rgba(244, 63, 94, 0.24);
+}
+
+body.dark-mode #btn-copy-box1 {
+  background-color: rgba(99, 102, 241, 0.16);
+  color: #a5b4fc;
+}
+
+body.dark-mode #btn-copy-box1:hover {
+  background-color: rgba(99, 102, 241, 0.26);
+}
+
+body.dark-mode #btn-copy-box2 {
+  background-color: rgba(16, 185, 129, 0.16);
+  color: #6ee7b7;
+}
+
+body.dark-mode #btn-copy-box2:hover {
+  background-color: rgba(16, 185, 129, 0.26);
+}
+
+body.dark-mode .canvas-viewport,
+body.dark-mode #box1-wrapper,
+body.dark-mode #box2-wrapper {
+  background-color: #0f172a;
+  border-color: #334155;
+}
+
+body.dark-mode #text-output-box:not(.overlay-ja-active),
+body.dark-mode #furigana-backdrop {
+  color: #f8fafc;
+}
+
+body.dark-mode #text-output-box.overlay-ja-active {
+  color: transparent;
+  caret-color: #f8fafc;
+}
+
+body.dark-mode #romanized-backdrop {
+  color: #cbd5e1;
+}
+
+body.dark-mode #furigana-backdrop rt,
+body.dark-mode .romanized-number {
+  color: #818cf8;
+}
+
+body.dark-mode .box-footer {
+  border-color: #334155;
+  color: #64748b;
+}
+
+body.dark-mode #candidates-container {
+  background-color: rgba(30, 41, 59, 0.92);
+  border-color: rgba(71, 85, 105, 0.9);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+body.dark-mode #candidates-container .candidate-btn {
+  background-color: #0f172a;
+  border-color: #334155;
+  color: #f1f5f9;
+}
+
+body.dark-mode #candidates-container .candidate-btn:hover,
+body.dark-mode #candidates-container .candidate-btn:active {
+  background-color: #312e81;
+  border-color: #6366f1;
+  color: #e0e7ff;
+}
+
+body.dark-mode #btn-toggle-fullscreen {
+  background-color: rgba(30, 41, 59, 0.92);
+  border-color: #475569;
+  color: #cbd5e1;
+}
+
+body.dark-mode #btn-toggle-fullscreen:hover {
+  background-color: #334155;
+  color: #818cf8;
+}
+
+body.dark-mode #canvas-romanization-popup > div {
+  background-color: rgba(15, 23, 42, 0.95);
+  border-color: #334155;
+  box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.5);
+}
+
+body.dark-mode #canvas-popup-char {
+  color: #94a3b8;
+}
+
+body.dark-mode #canvas-popup-romaji {
+  color: #f8fafc;
+}
+
+body.dark-mode .cjk-grid {
+  background-image: 
+    linear-gradient(to right, rgba(71, 85, 105, 0.45) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(71, 85, 105, 0.45) 1px, transparent 1px);
+}
+
+body.dark-mode .cyrillic-grid {
+  background-image: 
+    linear-gradient(to bottom, 
+      transparent 0%, 
+      transparent 24%, 
+      rgba(71, 85, 105, 0.45) 25%, 
+      transparent 26%, 
+      transparent 49%, 
+      rgba(100, 116, 139, 0.65) 50%, 
+      transparent 51%, 
+      transparent 74%, 
+      rgba(71, 85, 105, 0.45) 75%, 
+      transparent 76%
+    );
 }
 
 /* Responsive orientation layout (Portrait vs. Landscape) */
