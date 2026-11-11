@@ -308,7 +308,7 @@ body.canvas-expanded #btn-toggle-fullscreen {
   bottom: calc(0.65rem + env(safe-area-inset-bottom, 0px));
 }
 
-/* Portrait Fullscreen: Lock canvas to 2:3 aspect ratio so it fits above mobile browser bars */
+/* Portrait Fullscreen: Lock canvas to 2:3 aspect ratio + compact single-line boxes below */
 @media (orientation: portrait) {
   body.canvas-expanded main,
   body.canvas-expanded .workspace-card {
@@ -320,7 +320,7 @@ body.canvas-expanded #btn-toggle-fullscreen {
     width: 100%;
     aspect-ratio: 2 / 3;
     height: auto !important;
-    max-height: calc(var(--app-height, 100svh) - 5.5rem);
+    max-height: calc(var(--app-height, 100svh) - 10.5rem);
   }
 
   body.canvas-expanded #candidates-container {
@@ -329,6 +329,54 @@ body.canvas-expanded #btn-toggle-fullscreen {
 
   body.canvas-expanded #btn-toggle-fullscreen {
     bottom: 0.65rem;
+  }
+
+  body.canvas-expanded .dual-boxes-grid {
+    display: grid !important;
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+    margin-top: 0.25rem !important;
+  }
+
+  body.canvas-expanded .box-card {
+    padding: 0.2rem 0.35rem !important;
+    border-radius: 0.75rem !important;
+  }
+
+  body.canvas-expanded .box-card-header,
+  body.canvas-expanded .box-footer {
+    display: none !important;
+  }
+
+  body.canvas-expanded #box1-wrapper,
+  body.canvas-expanded #text-output-box,
+  body.canvas-expanded #furigana-backdrop {
+    min-height: 2.35rem !important;
+    height: 2.35rem !important;
+    max-height: 2.35rem !important;
+    white-space: nowrap !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    line-height: 1.5 !important;
+    padding: 0.5rem 0.5rem 0.1rem 0.5rem !important;
+  }
+
+  body.canvas-expanded #text-output-box:not([lang="ja"]) {
+    line-height: 1.5 !important;
+    padding: 0.35rem 0.5rem !important;
+  }
+
+  body.canvas-expanded #box2-wrapper,
+  body.canvas-expanded #romanized-output-box,
+  body.canvas-expanded #romanized-backdrop {
+    min-height: 1.9rem !important;
+    height: 1.9rem !important;
+    max-height: 1.9rem !important;
+    white-space: nowrap !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    line-height: 1.35 !important;
+    padding: 0.25rem 0.5rem !important;
   }
 }
 
