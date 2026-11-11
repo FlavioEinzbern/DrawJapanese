@@ -1,15 +1,44 @@
 /* ==========================================================================
-   Remove Box Placeholders Across All Views
-   ========================================================================== */
-textOutputBox.removeAttribute('placeholder');
-romanizedOutputBox.removeAttribute('placeholder');
-
-/* ==========================================================================
    Visible Viewport Height Sync (Keeps UI Above Mobile Browser Toolbars)
    ========================================================================== */
 function syncViewportHeight() {
   const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
   document.documentElement.style.setProperty('--app-height', `${Math.round(vh)}px`);
+}
+
+/* ==========================================================================
+   Dark Mode Toggle (Top-Right of Header, Default: Dark Mode)
+   ========================================================================== */
+const SUN_ICON_SVG = `
+  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="4"></circle>
+    <path stroke-linecap="round" d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32l1.41-1.41"></path>
+  </svg>
+`;
+
+const MOON_ICON_SVG = `
+  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"></path>
+  </svg>
+`;
+
+function initThemeToggle() {
+  const themeBtn = document.getElementById('btn-theme-toggle');
+  if (!themeBtn) return;
+
+  const updateThemeButtonUI = () => {
+    const isDark = document.body.classList.contains('dark-mode');
+    themeBtn.innerHTML = isDark ? SUN_ICON_SVG : MOON_ICON_SVG;
+    themeBtn.title = isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode';
+  };
+
+  updateThemeButtonUI();
+
+  themeBtn.addEventListener('click', () => {
+    document.body.classList.toggle('dark-mode');
+    updateThemeButtonUI();
+    redrawStrokes();
+  });
 }
 
 /* ==========================================================================
@@ -43,6 +72,10 @@ function autoResizeBoxes() {
   box1Wrapper.style.height = `${syncedHeight}px`;
   textOutputBox.style.height = `${syncedHeight}px`;
   furiganaBackdrop.style.height = `${syncedHeight}px`;
+  if (typeof romanizedBackdrop !== 'undefined' && romanizedBackdrop && romanizedBackdrop.parentElement) {
+    romanizedBackdrop.parentElement.style.height = `${syncedHeight}px`;
+    romanizedBackdrop.style.height = `${syncedHeight}px`;
+  }
   romanizedOutputBox.style.height = `${syncedHeight}px`;
 }
 
@@ -184,6 +217,9 @@ document.getElementById('btn-clear-text').addEventListener('click', () => {
   textOutputBox.value = '';
   furiganaBackdrop.innerHTML = '';
   romanizedOutputBox.value = '';
+  if (typeof romanizedBackdrop !== 'undefined' && romanizedBackdrop) {
+    romanizedBackdrop.innerHTML = '';
+  }
   textOutputBox.blur();
   charCount.textContent = '0 chars';
   autoResizeBoxes();
@@ -242,6 +278,7 @@ if (window.visualViewport) {
 
 window.addEventListener('DOMContentLoaded', () => {
   syncViewportHeight();
+  initThemeToggle();
   initCanvasFullscreenToggle();
   resizeCanvas();
   initKuroshiro();
