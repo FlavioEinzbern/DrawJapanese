@@ -1,6 +1,10 @@
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Roboto:wght@400;500&display=swap');
 
+:root {
+  --app-height: 100svh;
+}
+
 /* Base typography metrics (Japanese Box 1 + Furigana Backdrop) */
 .box1-shared-metrics {
   font-family: 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', ui-monospace, SFMono-Regular, monospace;
@@ -128,11 +132,11 @@
 
 @media (orientation: portrait) {
   body {
-    min-height: 100dvh;
+    min-height: var(--app-height, 100svh);
   }
   main {
     padding-top: 0.35rem !important;
-    padding-bottom: 0.35rem !important;
+    padding-bottom: calc(0.35rem + env(safe-area-inset-bottom, 0px)) !important;
   }
   main > * + * {
     margin-top: 0.35rem !important;
@@ -144,7 +148,7 @@
     margin-top: 0.35rem !important;
   }
   .canvas-viewport {
-    height: clamp(105px, 22dvh, 195px);
+    height: clamp(105px, 22svh, 195px);
   }
   .candidate-header {
     margin-bottom: 0.15rem !important;
@@ -195,10 +199,10 @@
   }
 }
 
-/* Expanded Canvas ("Full Screen" Viewport) Mode */
+/* Expanded Canvas ("Full Screen" Visible Viewport) Mode */
 body.canvas-expanded {
-  height: 100dvh;
-  max-height: 100dvh;
+  height: var(--app-height, 100svh);
+  max-height: var(--app-height, 100svh);
   overflow: hidden;
 }
 
@@ -212,6 +216,7 @@ body.canvas-expanded main {
   max-width: 100%;
   display: flex;
   flex-direction: column;
+  padding-bottom: calc(0.45rem + env(safe-area-inset-bottom, 0px)) !important;
 }
 
 body.canvas-expanded .workspace-card {
@@ -240,7 +245,7 @@ body.canvas-expanded .candidate-header {
 
 body.canvas-expanded #candidates-container {
   position: absolute;
-  bottom: 1.15rem;
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   width: max-content;
@@ -266,6 +271,10 @@ body.canvas-expanded #candidates-container .candidate-btn {
   min-width: 48px !important;
   min-height: 44px !important;
   border-radius: 0.75rem !important;
+}
+
+body.canvas-expanded #btn-toggle-fullscreen {
+  bottom: calc(0.65rem + env(safe-area-inset-bottom, 0px));
 }
 
 /* Enlarge Romanization Popup in full screen mode */
