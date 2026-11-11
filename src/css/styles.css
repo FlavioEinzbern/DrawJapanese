@@ -277,7 +277,7 @@ body.canvas-expanded #btn-toggle-fullscreen {
   bottom: calc(0.65rem + env(safe-area-inset-bottom, 0px));
 }
 
-/* Portrait Fullscreen: Lock canvas to 4:5 aspect ratio so it never hides behind mobile browser bars */
+/* Portrait Fullscreen: Lock canvas to 2:3 aspect ratio so it fits above mobile browser bars */
 @media (orientation: portrait) {
   body.canvas-expanded main,
   body.canvas-expanded .workspace-card {
@@ -287,7 +287,7 @@ body.canvas-expanded #btn-toggle-fullscreen {
   body.canvas-expanded .canvas-viewport {
     flex: 0 0 auto;
     width: 100%;
-    aspect-ratio: 4 / 5;
+    aspect-ratio: 2 / 3;
     height: auto !important;
     max-height: calc(var(--app-height, 100svh) - 7.5rem);
   }
