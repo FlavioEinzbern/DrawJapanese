@@ -8,6 +8,10 @@ let strokeStartTime = 0;
 let recognizeTimeout = null;
 let isInitialCandidateHintDismissed = false;
 
+function getCanvasStrokeColor() {
+  return document.body.classList.contains('dark-mode') ? '#f8fafc' : '#1e1b4b';
+}
+
 function dismissInitialCandidateHint() {
   if (isInitialCandidateHintDismissed) return;
   isInitialCandidateHintDismissed = true;
@@ -33,7 +37,7 @@ function resizeCanvas() {
   ctx.lineWidth = 4.5;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  ctx.strokeStyle = '#1e1b4b';
+  ctx.strokeStyle = getCanvasStrokeColor();
   
   redrawStrokes();
   if (typeof autoResizeBoxes === 'function') {
@@ -44,6 +48,7 @@ function resizeCanvas() {
 function redrawStrokes() {
   const rect = canvas.getBoundingClientRect();
   ctx.clearRect(0, 0, rect.width, rect.height);
+  ctx.strokeStyle = getCanvasStrokeColor();
   
   for (const stroke of strokes) {
     if (stroke.x.length === 0) continue;
@@ -77,6 +82,7 @@ function startDrawing(e) {
   clearTimeout(recognizeTimeout);
   isDrawing = true;
   strokeStartTime = Date.now();
+  ctx.strokeStyle = getCanvasStrokeColor();
   
   const { x, y } = getCoords(e);
   currentStroke = { x: [x], y: [y], t: [0] };
