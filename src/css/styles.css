@@ -217,7 +217,7 @@
     margin-top: 0.35rem !important;
   }
   .canvas-viewport {
-    height: clamp(180px, 33svh, 285px);
+    height: clamp(160px, 30svh, 265px);
   }
   body:not(.canvas-expanded) #candidates-container {
     bottom: 0.8rem;
@@ -308,7 +308,7 @@ body.canvas-expanded #btn-toggle-fullscreen {
   bottom: calc(0.65rem + env(safe-area-inset-bottom, 0px));
 }
 
-/* Portrait Fullscreen: Lock canvas to 2:3 aspect ratio + compact single-line boxes below */
+/* Portrait Fullscreen: 2:3 canvas minus 20px + compact single-line boxes below */
 @media (orientation: portrait) {
   body.canvas-expanded main,
   body.canvas-expanded .workspace-card {
@@ -318,9 +318,8 @@ body.canvas-expanded #btn-toggle-fullscreen {
   body.canvas-expanded .canvas-viewport {
     flex: 0 0 auto;
     width: 100%;
-    aspect-ratio: 2 / 3;
-    height: auto !important;
-    max-height: calc(var(--app-height, 100svh) - 10.5rem);
+    height: calc((100vw - 3.3rem) * 1.5 - 20px) !important;
+    max-height: calc(var(--app-height, 100svh) - 11.75rem);
   }
 
   body.canvas-expanded #candidates-container {
