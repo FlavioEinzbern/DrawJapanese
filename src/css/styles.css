@@ -491,15 +491,14 @@ body.dark-mode .cyrillic-grid {
   }
 }
 
-/* Expanded Canvas ("Full Screen" Visible Viewport) Mode */
+/* ==========================================================================
+   Expanded Canvas ("Full Screen" Visible Viewport) Mode — Portrait & Landscape
+   Always keeps the 2 compact boxes visible at the bottom of the screen.
+   ========================================================================== */
 body.canvas-expanded {
   height: var(--app-height, 100svh);
   max-height: var(--app-height, 100svh);
   overflow: hidden;
-}
-
-body.canvas-expanded:not(.box-focused) .dual-boxes-grid {
-  display: none !important;
 }
 
 body.canvas-expanded main {
@@ -508,7 +507,8 @@ body.canvas-expanded main {
   max-width: 100%;
   display: flex;
   flex-direction: column;
-  padding-bottom: calc(0.45rem + env(safe-area-inset-bottom, 0px)) !important;
+  padding-top: 0.35rem !important;
+  padding-bottom: calc(0.35rem + env(safe-area-inset-bottom, 0px)) !important;
 }
 
 body.canvas-expanded .workspace-card {
@@ -525,15 +525,70 @@ body.canvas-expanded .canvas-viewport {
 }
 
 body.canvas-expanded #candidates-container {
-  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  bottom: 0.9rem;
 }
 
 body.canvas-expanded #btn-toggle-fullscreen {
-  bottom: calc(0.65rem + env(safe-area-inset-bottom, 0px));
+  bottom: 0.65rem;
 }
 
-/* Portrait Fullscreen: 2:3 canvas minus 20px + compact single-line boxes below */
-@media (orientation: portrait), (max-width: 900px) {
+body.canvas-expanded .dual-boxes-grid {
+  display: grid !important;
+  flex: 0 0 auto;
+  margin-top: 0.35rem !important;
+}
+
+body.canvas-expanded .box-card {
+  padding: 0.25rem 0.45rem !important;
+  border-radius: 0.75rem !important;
+}
+
+body.canvas-expanded .box-card-header,
+body.canvas-expanded .box-footer {
+  display: none !important;
+}
+
+body.canvas-expanded #box1-wrapper,
+body.canvas-expanded #text-output-box,
+body.canvas-expanded #furigana-backdrop {
+  min-height: 2.35rem !important;
+  height: 2.35rem !important;
+  max-height: 2.35rem !important;
+  white-space: nowrap !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  line-height: 1.5 !important;
+  padding: 0.5rem 0.5rem 0.1rem 0.5rem !important;
+}
+
+body.canvas-expanded #text-output-box:not([lang="ja"]) {
+  line-height: 1.5 !important;
+  padding: 0.35rem 0.5rem !important;
+}
+
+body.canvas-expanded #box2-wrapper,
+body.canvas-expanded #romanized-output-box,
+body.canvas-expanded #romanized-backdrop {
+  min-height: 2.35rem !important;
+  height: 2.35rem !important;
+  max-height: 2.35rem !important;
+  white-space: nowrap !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  line-height: 1.45 !important;
+  padding: 0.35rem 0.5rem !important;
+}
+
+/* Landscape Fullscreen: side-by-side compact boxes at the bottom */
+@media (orientation: landscape) {
+  body.canvas-expanded .dual-boxes-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+}
+
+/* Portrait Fullscreen: 2:3 canvas minus 20px + stacked compact boxes at the bottom */
+@media (orientation: portrait) {
   body.canvas-expanded main,
   body.canvas-expanded .workspace-card {
     flex: 0 0 auto;
@@ -546,16 +601,7 @@ body.canvas-expanded #btn-toggle-fullscreen {
     max-height: calc(var(--app-height, 100svh) - 11.75rem);
   }
 
-  body.canvas-expanded #candidates-container {
-    bottom: 0.9rem;
-  }
-
-  body.canvas-expanded #btn-toggle-fullscreen {
-    bottom: 0.65rem;
-  }
-
   body.canvas-expanded .dual-boxes-grid {
-    display: grid !important;
     grid-template-columns: 1fr;
     gap: 0.25rem;
     margin-top: 0.25rem !important;
@@ -563,30 +609,6 @@ body.canvas-expanded #btn-toggle-fullscreen {
 
   body.canvas-expanded .box-card {
     padding: 0.2rem 0.35rem !important;
-    border-radius: 0.75rem !important;
-  }
-
-  body.canvas-expanded .box-card-header,
-  body.canvas-expanded .box-footer {
-    display: none !important;
-  }
-
-  body.canvas-expanded #box1-wrapper,
-  body.canvas-expanded #text-output-box,
-  body.canvas-expanded #furigana-backdrop {
-    min-height: 2.35rem !important;
-    height: 2.35rem !important;
-    max-height: 2.35rem !important;
-    white-space: nowrap !important;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    line-height: 1.5 !important;
-    padding: 0.5rem 0.5rem 0.1rem 0.5rem !important;
-  }
-
-  body.canvas-expanded #text-output-box:not([lang="ja"]) {
-    line-height: 1.5 !important;
-    padding: 0.35rem 0.5rem !important;
   }
 
   body.canvas-expanded #box2-wrapper,
@@ -595,9 +617,6 @@ body.canvas-expanded #btn-toggle-fullscreen {
     min-height: 1.9rem !important;
     height: 1.9rem !important;
     max-height: 1.9rem !important;
-    white-space: nowrap !important;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
     line-height: 1.35 !important;
     padding: 0.25rem 0.5rem !important;
   }
