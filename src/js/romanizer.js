@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Language Engine & Romanization Handlers (Kuroshiro + Kuromoji + kanjiapi.dev)
+   Language Engine & Romanization Handlers (Kuroshiro + Kuromoji + pinyin-pro)
    ========================================================================== */
 let kuroshiroInstance = null;
 let kuroshiroAnalyzer = null;
@@ -10,6 +10,11 @@ let imeSuggestRequestId = 0;
 /* In-memory Reading (Hiragana) -> Ranked Kanji Surface Forms extracted from Kuromoji */
 const KUROMOJI_READING_INDEX = new Map();
 let isKuromojiIndexBuilt = false;
+
+/* In-memory Pinyin (toneless & toned) -> Ranked Hanzi built from pinyin-pro */
+const ZH_PINYIN_TONELESS_INDEX = new Map();
+const ZH_PINYIN_TONED_INDEX = new Map();
+let isZhPinyinIndexBuilt = false;
 
 function katakanaToHiragana(str) {
   return str.replace(/[\u30A1-\u30F6]/g, (ch) =>
@@ -199,7 +204,6 @@ function buildKuromojiReadingIndex(analyzer) {
         const readingKata = parts[8];
 
         if (!surface || !readingKata || readingKata === '*' || pos === '記号') continue;
-        // Index entries that contain Kanji or useful vocabulary
         if (!KANJI_REGEX.test(surface) && surface.length < 2) continue;
 
         const hira = katakanaToHiragana(readingKata);
@@ -236,6 +240,72 @@ function buildKuromojiReadingIndex(analyzer) {
   }
 
   processChunk();
+}
+
+/*
+ * Build a non-blocking Chinese Pinyin (Toneless & Toned) -> Ranked Hanzi index
+ * in memory using pinyin-pro so all tones (ˉ ˊ ˇ ˋ and neutral) work offline.
+ */
+const HIGH_FREQ_HANZI_SEED =
+  '的一是在不了有和人这中大为上个国我以要他时来用们生到作地于出就分对成会可主发年动同工也能下过子说产种面而方后多定行学法所民得经十三之进着等部度家电力里如水化高自二理起小物现实加量都两体制机当使点从业本去把性好应开它合还因由其些然前外天政四日那社义事平形相全表间样与关各重新线内数正心反你明看原又么利比或但质气第向道命此变条只没结解问意建月公无系军很情者最立代想已通并提直题党程展五果料象员革位入常文总次品式活设及管特件长求老头基资边流路级少图山统接知较将组见计别她手角期根论运农指几九区强放决西被干做必战先回则任取据处队南给色光门即保治北造百规热领七海口东导器压志世金增争济阶油思术极交受联什认六共权收证改清己美再采转更单风切打白教速花带安场身车例真务具万每目至达走积示议声报斗完类八离华名确才科张信马节话米整空元况今集温传土许步群广石记需段研界拉林律叫且究观越织装影算低持音众书布复容儿须际商非验连断深难近矿千周委素技备半办青省列习响约支般史感劳便团往酸历市克何除消构太准精值号率族维划选标写存候毛亲快效斯院查江型眼王按格养易置派层片始却专状育厂京识适属圆包火住调满县局照参红细引听该铁价严首底液官德随病苏失尔死讲配女黄推显谈罪神艺呢吗妈麻骂码爸吧把八百北不吃茶车城出穿船床吹春词次从错打大但当到道得等点电店东懂动都读短对多饿儿二发饭方房放飞非分风服附父刚高哥歌个给跟更工公共狗古故刮关观光广贵国果过还海孩汉好号喝和河贺黑很红后候湖虎花画化话欢还换黄回会活火机鸡级极急几己记既家假价间见件健江讲交角脚叫觉姐解借今斤金进近京经景静九酒就旧局举句具剧决绝军开看康考棵科咳可渴克刻客空孔口哭苦库裤块快宽况矿困拉啦来蓝篮兰拦烂郎朗浪捞劳老乐雷累冷离梨礼李里理力历立丽利例连联脸练凉两亮谅辆聊林零领流留六龙楼路旅绿乱妈麻马骂吗慢忙毛冒么没眉梅美妹门闷们梦米迷秘蜜眠民敏名明鸣命摸模膜摩磨蘑魔抹末莫墨默谋某母亩木目牧拿哪那内男南难囊呢内嫩能你泥年中飯';
+
+function addHanziToPinyinIndex(ch) {
+  if (typeof pinyinPro === 'undefined' || !pinyinPro.pinyin) return;
+  const pyNum = pinyinPro.pinyin(ch, { toneType: 'num' });
+  if (!pyNum || !/^[a-züv]+[0-5]?$/i.test(pyNum)) return;
+
+  const normalizedNum = pyNum.toLowerCase().replace(/ü/g, 'v');
+  const toneless = normalizedNum.replace(/[0-5]/g, '');
+  if (!toneless) return;
+
+  let tonedList = ZH_PINYIN_TONED_INDEX.get(normalizedNum);
+  if (!tonedList) {
+    tonedList = [];
+    ZH_PINYIN_TONED_INDEX.set(normalizedNum, tonedList);
+  }
+  if (!tonedList.includes(ch) && tonedList.length < 18) {
+    tonedList.push(ch);
+  }
+
+  let tonelessList = ZH_PINYIN_TONELESS_INDEX.get(toneless);
+  if (!tonelessList) {
+    tonelessList = [];
+    ZH_PINYIN_TONELESS_INDEX.set(toneless, tonelessList);
+  }
+  if (!tonelessList.includes(ch) && tonelessList.length < 24) {
+    tonelessList.push(ch);
+  }
+}
+
+function buildChinesePinyinIndex() {
+  if (isZhPinyinIndexBuilt || typeof pinyinPro === 'undefined' || !pinyinPro.pinyin) return;
+  isZhPinyinIndexBuilt = true;
+
+  // 1. Immediate seed of high-frequency Chinese characters across all tones
+  for (const ch of HIGH_FREQ_HANZI_SEED) {
+    if (KANJI_REGEX.test(ch)) addHanziToPinyinIndex(ch);
+  }
+
+  // 2. Background chunked scan of common CJK block (0x4E00..0x9FA5)
+  let code = 0x4E00;
+  const END_CODE = 0x9FA5;
+  const CHUNK = 450;
+
+  function indexChunk() {
+    const limit = Math.min(code + CHUNK, END_CODE);
+    for (; code <= limit; code++) {
+      addHanziToPinyinIndex(String.fromCharCode(code));
+    }
+    if (code <= END_CODE) {
+      if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(indexChunk, { timeout: 120 });
+      } else {
+        setTimeout(indexChunk, 12);
+      }
+    }
+  }
+
+  indexChunk();
 }
 
 const PRECEDING_NUM_SURFACE_REGEX = /[0-9０-９零〇一二两三四五六七八九十百千万億亿]$/;
@@ -494,9 +564,34 @@ function buildFallbackJapaneseAlignedSegments(text) {
   return segs;
 }
 
+function buildChineseAlignedSegments(text) {
+  const segs = [];
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (/\s/.test(ch)) {
+      segs.push({ src: ch, rom: '' });
+      i++;
+      continue;
+    }
+    const numMatch = text.slice(i).match(/^([0-9０-９]+|[零〇一二两三四五六七八九十百千万億亿]+)/);
+    if (numMatch) {
+      const token = numMatch[0];
+      segs.push({ src: token, rom: romanizeNumberByLang(token, 'zh').trim() });
+      i += token.length;
+      continue;
+    }
+    const rom = romanizeChinese(ch).trim();
+    segs.push({ src: ch, rom });
+    i++;
+  }
+  return segs;
+}
+
 async function initKuroshiro() {
   ensureGzippedDictLoader();
   getBox2Backdrop();
+  buildChinesePinyinIndex();
 
   const KuroshiroClass = typeof Kuroshiro !== 'undefined' ? (Kuroshiro.default || Kuroshiro) : null;
   const KuromojiAnalyzerClass = typeof KuromojiAnalyzer !== 'undefined' ? (KuromojiAnalyzer.default || KuromojiAnalyzer) : null;
@@ -1227,6 +1322,352 @@ async function romanizeNonJapaneseTextAndNumbers(text, lang) {
 }
 
 /* ==========================================================================
+   Chinese Pinyin Tone Normalizer & Hybrid Phrase/All-Tone IME Engine
+   ========================================================================== */
+const PINYIN_ACCENT_MAP = {
+  'ā': { base: 'a', tone: '1' }, 'á': { base: 'a', tone: '2' }, 'ǎ': { base: 'a', tone: '3' }, 'à': { base: 'a', tone: '4' },
+  'ē': { base: 'e', tone: '1' }, 'é': { base: 'e', tone: '2' }, 'ě': { base: 'e', tone: '3' }, 'è': { base: 'e', tone: '4' },
+  'ī': { base: 'i', tone: '1' }, 'í': { base: 'i', tone: '2' }, 'ǐ': { base: 'i', tone: '3' }, 'ì': { base: 'i', tone: '4' },
+  'ō': { base: 'o', tone: '1' }, 'ó': { base: 'o', tone: '2' }, 'ǒ': { base: 'o', tone: '3' }, 'ò': { base: 'o', tone: '4' },
+  'ū': { base: 'u', tone: '1' }, 'ú': { base: 'u', tone: '2' }, 'ǔ': { base: 'u', tone: '3' }, 'ù': { base: 'u', tone: '4' },
+  'ǖ': { base: 'v', tone: '1' }, 'ǘ': { base: 'v', tone: '2' }, 'ǚ': { base: 'v', tone: '3' }, 'ǜ': { base: 'v', tone: '4' },
+  'ü': { base: 'v', tone: '' }
+};
+
+/* Preserves string length while folding accented Pinyin vowels to plain ASCII */
+function foldPinyinAccents(str) {
+  if (!str) return '';
+  const nfc = typeof str.normalize === 'function' ? str.normalize('NFC') : str;
+  let out = '';
+  for (const ch of nfc) {
+    const lower = ch.toLowerCase();
+    if (PINYIN_ACCENT_MAP[lower]) {
+      out += PINYIN_ACCENT_MAP[lower].base;
+    } else {
+      out += lower;
+    }
+  }
+  return out;
+}
+
+/* Parse a Pinyin syllable or phrase into toneless, toned (if specified), and Google API query */
+function parseChinesePinyinInput(rawInput) {
+  const nfc = (typeof rawInput.normalize === 'function' ? rawInput.normalize('NFC') : rawInput).trim();
+  const rawTokens = nfc.split(/\s+/).filter(Boolean);
+  const syllables = [];
+
+  for (const tok of rawTokens) {
+    let base = '';
+    let detectedTone = '';
+    for (const ch of tok) {
+      const lower = ch.toLowerCase();
+      if (PINYIN_ACCENT_MAP[lower]) {
+        base += PINYIN_ACCENT_MAP[lower].base;
+        if (PINYIN_ACCENT_MAP[lower].tone) detectedTone = PINYIN_ACCENT_MAP[lower].tone;
+      } else if (/^[1-5]$/.test(lower)) {
+        detectedTone = lower === '5' ? '0' : lower;
+      } else if (/^[a-z']$/i.test(lower)) {
+        base += lower;
+      }
+    }
+    const cleanBase = base.replace(/'/g, '');
+    if (cleanBase) {
+      syllables.push({
+        base: cleanBase,
+        tone: detectedTone,
+        tonedKey: detectedTone ? `${cleanBase}${detectedTone}` : cleanBase
+      });
+    }
+  }
+
+  const tonelessJoined = syllables.map(s => s.base).join('');
+  const googleQuery = tonelessJoined.replace(/v/g, 'u');
+  return { syllables, tonelessJoined, googleQuery };
+}
+
+const LOCAL_ZH_IME_DICT = {
+  'nihao': ['你好', '您好'],
+  'ninhao': ['您好', '你好'],
+  'xiexie': ['谢谢', '謝謝'],
+  'bukeqi': ['不客气', '不客氣'],
+  'zaijian': ['再见', '再見'],
+  'duibuqi': ['对不起', '對不起'],
+  'meiguanxi': ['没关系', '沒關係'],
+  'zaoshanghao': ['早上好'],
+  'wanshanghao': ['晚上好'],
+  'wanan': ['晚安'],
+  'wo': ['我', '握', '窝', '卧', '沃'],
+  'ni': ['你', '泥', '拟', '逆', '呢', '妳'],
+  'ta': ['他', '她', '它', '塔', '踏', '塌'],
+  'women': ['我们', '我們'],
+  'nimen': ['你们', '你們'],
+  'tamen': ['他们', '她们', '它们'],
+  'shi': ['是', '十', '时', '事', '市', '师', '石', '食', '试', '室', '世', '识', '实', '史', '使', '始'],
+  'bushi': ['不是'],
+  'de': ['的', '地', '得', '德'],
+  'le': ['了', '乐', '勒'],
+  'ma': ['吗', '妈', '马', '麻', '骂', '码', '嘛', '蚂', '抹'],
+  'ba': ['吧', '把', '爸', '八', '拔', '靶', '罢', '霸'],
+  'ne': ['呢', '呐', '讷'],
+  'a': ['啊', '阿', '呵'],
+  'hao': ['好', '号', '毫', '豪', '耗', '浩'],
+  'henhao': ['很好'],
+  'bu': ['不', '步', '部', '布', '补', '捕', '簿'],
+  'you': ['有', '又', '友', '右', '由', '油', '游', '优', '邮'],
+  'meiyou': ['没有', '沒有'],
+  'zai': ['在', '再', '载', '灾', '栽'],
+  'zhe': ['这', '着', '者', '折', '哲', '浙'],
+  'zheli': ['这里', '這裡'],
+  'na': ['那', '哪', '拿', '纳', '娜', '呐'],
+  'nali': ['哪里', '那里'],
+  'shenme': ['什么', '什麼'],
+  'zenme': ['怎么', '怎麼'],
+  'weishenme': ['为什么', '為什麼'],
+  'duoshao': ['多少'],
+  'zhongguo': ['中国', '中國'],
+  'zhongwen': ['中文'],
+  'hanyu': ['汉语', '漢語'],
+  'beijing': ['北京'],
+  'shanghai': ['上海'],
+  'riben': ['日本'],
+  'meiguo': ['美国', '美國'],
+  'xuesheng': ['学生', '學生'],
+  'laoshi': ['老师', '老師'],
+  'xuexiao': ['学校', '學校'],
+  'pengyou': ['朋友'],
+  'jia': ['家', '加', '假', '价', '架', '佳'],
+  'ren': ['人', '任', '认', '忍', '仁', '刃'],
+  'tian': ['天', '田', '填', '甜', '添'],
+  'tianqi': ['天气', '天氣'],
+  'jintian': ['今天'],
+  'mingtian': ['明天'],
+  'zuotian': ['昨天'],
+  'jintiantianqihenhao': ['今天天气很好'],
+  'xianzai': ['现在', '現在'],
+  'shijian': ['时间', '時間'],
+  'xiexieni': ['谢谢你'],
+  'woaini': ['我爱你', '我愛你'],
+  'xihuan': ['喜欢', '喜歡'],
+  'ai': ['爱', '矮', '挨', '唉', '哀', '癌'],
+  'chi': ['吃', '尺', '迟', '池', '持', '齿', '翅'],
+  'chifan': ['吃饭', '吃飯'],
+  'he': ['喝', '和', '河', '合', '盒', '何', '荷'],
+  'heshui': ['喝水'],
+  'shui': ['水', '谁', '睡', '税', '顺'],
+  'kan': ['看', '砍', '侃', '刊', '堪'],
+  'ting': ['听', '停', '挺', '厅', '亭', '庭'],
+  'shuo': ['说', '硕', '烁', '朔'],
+  'shuohua': ['说话', '說話'],
+  'xie': ['写', '谢', '些', '鞋', '斜', '血', '蟹'],
+  'du': ['读', '度', '毒', '独', '堵', '肚', '渡'],
+  'lai': ['来', '赖', '莱'],
+  'qu': ['去', '取', '区', '曲', '趣', '娶'],
+  'hui': ['会', '回', '灰', '挥', '辉', '悔', '汇'],
+  'xiang': ['想', '向', '像', '响', '香', '乡', '箱', '项'],
+  'yao': ['要', '药', '咬', '摇', '腰', '邀', '耀'],
+  'keyi': ['可以'],
+  'zhidao': ['知道'],
+  'mingzi': ['名字'],
+  'wodemingzishi': ['我的名字是'],
+  'woshi': ['我是'],
+  'woshixuesheng': ['我是学生']
+};
+
+function lookupSinglePinyinSyllableCandidates(baseSyllable, toneNum = '') {
+  buildChinesePinyinIndex();
+  const out = [];
+  const add = (ch) => {
+    if (ch && !out.includes(ch)) out.push(ch);
+  };
+
+  // 1. If a specific tone (1..4) was typed via accent or digit, prioritize that exact tone first
+  if (toneNum) {
+    const tonedKey = `${baseSyllable}${toneNum}`;
+    if (ZH_PINYIN_TONED_INDEX.has(tonedKey)) {
+      ZH_PINYIN_TONED_INDEX.get(tonedKey).forEach(add);
+    }
+  }
+
+  // 2. Curated dictionary for common syllables across all tones
+  if (LOCAL_ZH_IME_DICT[baseSyllable]) {
+    LOCAL_ZH_IME_DICT[baseSyllable].forEach(add);
+  }
+
+  // 3. Interleave characters across tones 1, 2, 3, 4, 0 so all tones (ˉ ˊ ˇ ˋ) are represented
+  for (let round = 0; round < 4; round++) {
+    for (const t of ['1', '2', '3', '4', '0']) {
+      const tList = ZH_PINYIN_TONED_INDEX.get(`${baseSyllable}${t}`);
+      if (tList && tList[round]) add(tList[round]);
+    }
+  }
+
+  // 4. Fill remaining from toneless index
+  if (ZH_PINYIN_TONELESS_INDEX.has(baseSyllable)) {
+    ZH_PINYIN_TONELESS_INDEX.get(baseSyllable).forEach(add);
+  }
+
+  return out;
+}
+
+/* Split concatenated toneless Pinyin (e.g. "nihao" -> ["ni", "hao"]) using valid Pinyin keys */
+function segmentConcatenatedPinyin(tonelessStr) {
+  buildChinesePinyinIndex();
+  const n = tonelessStr.length;
+  const dp = new Array(n + 1).fill(null);
+  dp[0] = [];
+
+  for (let i = 0; i < n; i++) {
+    if (!dp[i]) continue;
+    for (let len = Math.min(6, n - i); len >= 1; len--) {
+      const sub = tonelessStr.substr(i, len);
+      if (ZH_PINYIN_TONELESS_INDEX.has(sub) || LOCAL_ZH_IME_DICT[sub]) {
+        const nextIdx = i + len;
+        const candidatePath = [...dp[i], sub];
+        if (!dp[nextIdx] || candidatePath.length < dp[nextIdx].length) {
+          dp[nextIdx] = candidatePath;
+        }
+      }
+    }
+  }
+  return dp[n] || [tonelessStr];
+}
+
+function buildLocalChineseSuggestions(rawPinyin) {
+  buildChinesePinyinIndex();
+  const { syllables, tonelessJoined } = parseChinesePinyinInput(rawPinyin);
+  if (!tonelessJoined) return [];
+
+  const results = [];
+  const addUnique = (val) => {
+    if (val && !results.includes(val)) results.push(val);
+  };
+
+  // 1. Direct phrase match in LOCAL_ZH_IME_DICT
+  if (LOCAL_ZH_IME_DICT[tonelessJoined]) {
+    LOCAL_ZH_IME_DICT[tonelessJoined].forEach(addUnique);
+  }
+
+  // 2. If single syllable (with or without explicit tone), return all-tone options
+  if (syllables.length === 1) {
+    const singleSyl = syllables[0];
+    lookupSinglePinyinSyllableCandidates(singleSyl.base, singleSyl.tone).forEach(addUnique);
+  }
+
+  // 3. Multi-syllable offline phrase assembly
+  const effectiveSyllables = syllables.length > 1
+    ? syllables
+    : segmentConcatenatedPinyin(tonelessJoined).map(b => ({ base: b, tone: '' }));
+
+  if (effectiveSyllables.length > 1) {
+    let assembledBest = '';
+    let i = 0;
+    while (i < effectiveSyllables.length) {
+      let matchedCompound = false;
+      for (let span = Math.min(4, effectiveSyllables.length - i); span >= 2; span--) {
+        const subKey = effectiveSyllables.slice(i, i + span).map(s => s.base).join('');
+        if (LOCAL_ZH_IME_DICT[subKey]) {
+          assembledBest += LOCAL_ZH_IME_DICT[subKey][0];
+          i += span;
+          matchedCompound = true;
+          break;
+        }
+      }
+      if (!matchedCompound) {
+        const syl = effectiveSyllables[i];
+        const cands = lookupSinglePinyinSyllableCandidates(syl.base, syl.tone);
+        assembledBest += cands[0] || syl.base;
+        i++;
+      }
+    }
+    if (assembledBest) addUnique(assembledBest);
+
+    // Also include top single-character options for the first syllable
+    const firstSyl = effectiveSyllables[0];
+    lookupSinglePinyinSyllableCandidates(firstSyl.base, firstSyl.tone).slice(0, 8).forEach(addUnique);
+  }
+
+  return results.slice(0, 12);
+}
+
+function fetchGoogleChinesePinyinJsonp(googleQuery, timeoutMs = 1800) {
+  return new Promise((resolve, reject) => {
+    const cbName = '_googleZhImeCb_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+    const script = document.createElement('script');
+    let settled = false;
+
+    const cleanup = () => {
+      if (script.parentNode) script.parentNode.removeChild(script);
+      try {
+        delete window[cbName];
+      } catch (_) {
+        window[cbName] = undefined;
+      }
+    };
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error('ZH JSONP timeout'));
+    }, timeoutMs);
+
+    window[cbName] = (data) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      cleanup();
+      if (data && data[0] === 'SUCCESS' && data[1] && data[1][0] && Array.isArray(data[1][0][1])) {
+        resolve(data[1][0][1]);
+      } else {
+        resolve([]);
+      }
+    };
+
+    script.onerror = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      cleanup();
+      reject(new Error('ZH JSONP error'));
+    };
+
+    script.src = `https://inputtools.google.com/request?text=${encodeURIComponent(googleQuery)}&itc=zh-t-i0-pinyin&num=10&cp=0&cs=1&ie=utf-8&oe=utf-8&app=translate&cb=${cbName}`;
+    document.head.appendChild(script);
+  });
+}
+
+async function fetchGoogleChinesePinyinIme(googleQuery) {
+  if (!googleQuery) return [];
+  try {
+    const jsonpList = await fetchGoogleChinesePinyinJsonp(googleQuery, 1800);
+    if (jsonpList && jsonpList.length > 0) return jsonpList;
+  } catch (_) {}
+
+  const targetUrl = `https://inputtools.google.com/request?text=${encodeURIComponent(googleQuery)}&itc=zh-t-i0-pinyin&num=10&cp=0&cs=1&ie=utf-8&oe=utf-8&app=translate`;
+  const endpoints = [
+    targetUrl,
+    `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
+  ];
+
+  for (const url of endpoints) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1800);
+    try {
+      const res = await fetch(url, { method: 'GET', mode: 'cors', credentials: 'omit', signal: controller.signal });
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data && data[0] === 'SUCCESS' && data[1] && data[1][0] && Array.isArray(data[1][0][1])) {
+        return data[1][0][1];
+      }
+    } catch (_) {
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return [];
+}
+
+/* ==========================================================================
    Writable Box 2 Reverse Transliteration & Hybrid Phrase/Kanji IME Engine
    ========================================================================== */
 const ROMAJI_TO_HIRA_MAP = (() => {
@@ -1481,6 +1922,13 @@ function formatBox2BackdropWithNumbers(rawText) {
     .join('');
 }
 
+function compareRomajiSegmentSlices(sliceA, sliceB) {
+  if (currentLang === 'zh') {
+    return foldPinyinAccents(sliceA) === foldPinyinAccents(sliceB);
+  }
+  return sliceA.toLowerCase() === sliceB.toLowerCase();
+}
+
 function matchUnchangedBox2Segments(rawBox2, segments) {
   const validSegs = segments.filter(s => s && s.src);
   let pos = 0;
@@ -1497,7 +1945,7 @@ function matchUnchangedBox2Segments(rawBox2, segments) {
       scanPos++;
     }
     const candidateSlice = rawBox2.slice(scanPos, scanPos + seg.rom.length);
-    if (candidateSlice.toLowerCase() === seg.rom.toLowerCase()) {
+    if (candidateSlice.length === seg.rom.length && compareRomajiSegmentSlices(candidateSlice, seg.rom)) {
       pos = scanPos + seg.rom.length;
       prefixIdx++;
     } else {
@@ -1521,7 +1969,7 @@ function matchUnchangedBox2Segments(rawBox2, segments) {
     const startCandidate = scanEnd - seg.rom.length;
     if (startCandidate > pos && /\s/.test(rawBox2[startCandidate - 1])) {
       const candidateSlice = rawBox2.slice(startCandidate, scanEnd);
-      if (candidateSlice.toLowerCase() === seg.rom.toLowerCase()) {
+      if (candidateSlice.length === seg.rom.length && compareRomajiSegmentSlices(candidateSlice, seg.rom)) {
         endPos = startCandidate;
         suffixIdx--;
         continue;
@@ -1542,6 +1990,10 @@ function convertBox2SubstringToBox1(subRomaji, lang) {
   if (lang === 'ja') return romajiToJapaneseKanaByCase(subRomaji, true);
   if (lang === 'ru') return latinToRussianCyrillic(subRomaji);
   if (lang === 'ko') return romanizedToHangul(subRomaji);
+  if (lang === 'zh') {
+    const localCands = buildLocalChineseSuggestions(subRomaji);
+    return localCands[0] || subRomaji.trim();
+  }
   return subRomaji;
 }
 
@@ -1634,7 +2086,13 @@ async function handleBox2Input() {
     if (trimmedMidRom) {
       const replaceStart = prefixSrc.length;
       const replaceEnd = replaceStart + convertedMiddle.length;
-      fetchChinesePinyinSuggestions(trimmedMidRom, { start: replaceStart, end: replaceEnd });
+      updateChineseTypingSuggestions(trimmedMidRom, {
+        start: replaceStart,
+        end: replaceEnd,
+        liveUpdateBox1: true,
+        prefixSrc,
+        suffixSrc
+      });
     } else {
       showTypingSuggestions([], null);
     }
@@ -1731,11 +2189,6 @@ function lookupWordCandidatesForHira(hiraWord) {
   return cands;
 }
 
-/*
- * Offline Cohesive Phrase Builder:
- * Segments multi-word Hiragana input across grammatical particles & verb endings
- * using Kuromoji's 160k-word reading index + LOCAL_JA_IME_DICT.
- */
 const GRAMMAR_PARTICLES = new Set(['は', 'が', 'を', 'に', 'へ', 'で', 'と', 'の', 'も', 'や', 'か', 'ね', 'よ']);
 const MULTI_CHAR_ENDINGS = ['だけの', 'だけ', 'から', 'まで', 'より', 'ほど', 'くらい', 'ぐらい', 'です', 'ます', 'でした', 'ました', 'ません', 'ない', 'たい'];
 
@@ -1743,14 +2196,12 @@ function assembleOfflineKanjiPhrase(hiraStr) {
   if (!hiraStr || hiraStr.length < 2) return [];
 
   const n = hiraStr.length;
-  // dp[i] = { cost, text, altText }
   const dp = new Array(n + 1).fill(null);
   dp[0] = { cost: 0, text: '', altText: '' };
 
   for (let i = 0; i < n; i++) {
     if (!dp[i]) continue;
 
-    // 1. Try multi-character grammatical endings / particles
     for (const ending of MULTI_CHAR_ENDINGS) {
       if (i > 0 && hiraStr.startsWith(ending, i)) {
         const nextIdx = i + ending.length;
@@ -1766,7 +2217,6 @@ function assembleOfflineKanjiPhrase(hiraStr) {
       }
     }
 
-    // 2. Try single-character particle (when preceded by a word)
     if (i > 0 && GRAMMAR_PARTICLES.has(hiraStr[i])) {
       const p = hiraStr[i];
       const nextIdx = i + 1;
@@ -1780,7 +2230,6 @@ function assembleOfflineKanjiPhrase(hiraStr) {
       }
     }
 
-    // 3. Try vocabulary spans from length 1 up to 10
     const maxLen = Math.min(10, n - i);
     for (let len = maxLen; len >= 1; len--) {
       const sub = hiraStr.substr(i, len);
@@ -1792,7 +2241,6 @@ function assembleOfflineKanjiPhrase(hiraStr) {
         const baseCost = LOCAL_JA_IME_DICT[sub]
           ? 2200
           : (kuroEntry && kuroEntry[0] ? Math.max(1500, kuroEntry[0].cost) : 4500);
-        // Prefer longer meaningful words over single-char splits
         const spanCost = baseCost - (len * 350);
         const nextIdx = i + len;
         const newCost = dp[i].cost + spanCost;
@@ -1805,7 +2253,6 @@ function assembleOfflineKanjiPhrase(hiraStr) {
           };
         }
       } else if (len === 1) {
-        // Unmatched single kana fallback
         const nextIdx = i + 1;
         const newCost = dp[i].cost + 8500;
         if (!dp[nextIdx] || newCost < dp[nextIdx].cost) {
@@ -1829,11 +2276,6 @@ function assembleOfflineKanjiPhrase(hiraStr) {
   return out;
 }
 
-/*
- * Google Japanese Input CGI API (`www.google.com/transliterate?langpair=ja-Hira|ja`)
- * Uses cross-origin JSONP first, with direct/proxy fetch fallback.
- * Parses multi-segment bunsetsu responses into full cohesive phrases + segment candidates.
- */
 function parseGoogleTransliterateBunsetsu(data) {
   if (!Array.isArray(data) || data.length === 0) return [];
   const results = [];
@@ -1847,11 +2289,9 @@ function parseGoogleTransliterateBunsetsu(data) {
     return results;
   }
 
-  // Multi-clause phrase: join the top candidate of every bunsetsu into a cohesive sentence
   const top1Phrase = data.map(seg => (seg[1] && seg[1][0]) ? seg[1][0] : seg[0]).join('');
   addUnique(top1Phrase);
 
-  // Generate cohesive phrase variations by varying each bunsetsu's 2nd and 3rd candidates
   for (let segIdx = 0; segIdx < data.length; segIdx++) {
     const segCands = data[segIdx][1] || [];
     for (let cIdx = 1; cIdx < Math.min(3, segCands.length); cIdx++) {
@@ -1862,7 +2302,6 @@ function parseGoogleTransliterateBunsetsu(data) {
     }
   }
 
-  // Also include first clause's top candidates for partial conversion
   if (Array.isArray(data[0][1])) {
     data[0][1].slice(0, 4).forEach(addUnique);
   }
@@ -1917,9 +2356,7 @@ async function fetchGoogleJapaneseCgiIme(hiraQuery) {
   try {
     const jsonpResults = await fetchGoogleCgiJsonp(hiraQuery, 1800);
     if (jsonpResults && jsonpResults.length > 0) return jsonpResults;
-  } catch (_) {
-    // Fall through to fetch endpoints if JSONP is blocked
-  }
+  } catch (_) {}
 
   const targetUrl = `https://www.google.com/transliterate?langpair=ja-Hira|ja&text=${encodeURIComponent(hiraQuery)}`;
   const endpoints = [
@@ -1942,7 +2379,6 @@ async function fetchGoogleJapaneseCgiIme(hiraQuery) {
       const parsed = parseGoogleTransliterateBunsetsu(data);
       if (parsed.length > 0) return parsed;
     } catch (_) {
-      // Continue to next fallback
     } finally {
       clearTimeout(timer);
     }
@@ -1957,14 +2393,11 @@ function buildLocalJapaneseSuggestions(hiraQuery, kataQuery) {
     if (val && !results.includes(val)) results.push(val);
   };
 
-  // 1. Direct match in curated + Kuromoji 160k-word reading index
   lookupWordCandidatesForHira(hiraQuery).forEach(addUnique);
 
-  // 2. Offline cohesive phrase assembly (handles multi-word phrases & particles like わたしのなまえは -> 私の名前は)
   const assembledPhrases = assembleOfflineKanjiPhrase(hiraQuery);
   assembledPhrases.forEach(addUnique);
 
-  // 3. Stem + particle/ending assembly (e.g., がっこうへ -> 学校へ, たべます -> 食べます)
   const endings = ['だけの', 'だけ', 'から', 'まで', 'です', 'ます', 'は', 'が', 'を', 'に', 'へ', 'で', 'と', 'の', 'も'];
   for (const p of endings) {
     if (hiraQuery.length > p.length && hiraQuery.endsWith(p)) {
@@ -1976,7 +2409,6 @@ function buildLocalJapaneseSuggestions(hiraQuery, kataQuery) {
     }
   }
 
-  // 4. Predictive prefix matches from LOCAL_JA_IME_DICT
   if (hiraQuery.length >= 2) {
     for (const [key, list] of Object.entries(LOCAL_JA_IME_DICT)) {
       if (key.startsWith(hiraQuery) && key !== hiraQuery) {
@@ -1986,7 +2418,6 @@ function buildLocalJapaneseSuggestions(hiraQuery, kataQuery) {
     }
   }
 
-  // 5. Include Hiragana and Katakana forms at the end
   addUnique(hiraQuery);
   addUnique(kataQuery);
 
@@ -2014,9 +2445,77 @@ function extractActiveJapaneseQueryRange(text, explicitRange) {
   return { start, end: cursor, raw };
 }
 
-async function updateTypingSuggestions(text, explicitRange = null) {
-  if (currentLang !== 'ja') return;
+function extractActiveChineseQueryRange(text) {
+  const cursor = (document.activeElement === textOutputBox && textOutputBox.selectionEnd != null)
+    ? textOutputBox.selectionEnd
+    : text.length;
+
+  const beforeCursor = text.slice(0, cursor);
+  const match = beforeCursor.match(/([a-zA-Z0-5āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜü']+)$/);
+  if (!match) return null;
+
+  const raw = match[1];
+  const start = cursor - raw.length;
+  return { start, end: cursor, raw };
+}
+
+async function updateChineseTypingSuggestions(rawPinyin, replaceSpec) {
+  if (currentLang !== 'zh') return;
   if (typeof strokes !== 'undefined' && strokes.length > 0) return;
+
+  const { syllables, tonelessJoined, googleQuery } = parseChinesePinyinInput(rawPinyin);
+  if (!tonelessJoined) {
+    showTypingSuggestions([], null);
+    return;
+  }
+
+  const reqId = ++imeSuggestRequestId;
+  const hasExplicitTone = syllables.length === 1 && Boolean(syllables[0].tone);
+  const localList = buildLocalChineseSuggestions(rawPinyin);
+  let currentEnd = replaceSpec.end;
+
+  showTypingSuggestions(localList, { start: replaceSpec.start, end: currentEnd });
+
+  if (googleQuery) {
+    const remoteList = await fetchGoogleChinesePinyinIme(googleQuery);
+    if (reqId !== imeSuggestRequestId || currentLang !== 'zh') return;
+
+    if (remoteList.length > 0) {
+      const merged = [];
+      // If user explicitly typed a tone mark or tone number (e.g. mǎ or ma3), keep exact tone matches first
+      const ordered = hasExplicitTone ? [...localList, ...remoteList] : [...remoteList, ...localList];
+      for (const item of ordered) {
+        if (item && !merged.includes(item)) merged.push(item);
+      }
+
+      // If user is actively typing in Box 2, update Box 1's live preview with the #1 phrase candidate
+      if (replaceSpec.liveUpdateBox1 && merged[0] && document.activeElement === romanizedOutputBox) {
+        const nextBox1 = (replaceSpec.prefixSrc || '') + merged[0] + (replaceSpec.suffixSrc || '');
+        textOutputBox.value = nextBox1;
+        charCount.textContent = `${nextBox1.length} char${nextBox1.length === 1 ? '' : 's'}`;
+        currentEnd = (replaceSpec.prefixSrc || '').length + merged[0].length;
+        autoResizeBoxes();
+      }
+
+      showTypingSuggestions(merged.slice(0, 12), { start: replaceSpec.start, end: currentEnd });
+    }
+  }
+}
+
+async function updateTypingSuggestions(text, explicitRange = null) {
+  if (typeof strokes !== 'undefined' && strokes.length > 0) return;
+
+  if (currentLang === 'zh') {
+    const zhRange = extractActiveChineseQueryRange(text);
+    if (!zhRange || !zhRange.raw) {
+      showTypingSuggestions([], null);
+      return;
+    }
+    await updateChineseTypingSuggestions(zhRange.raw, { start: zhRange.start, end: zhRange.end });
+    return;
+  }
+
+  if (currentLang !== 'ja') return;
 
   const activeRange = extractActiveJapaneseQueryRange(text, explicitRange);
   if (!activeRange || !activeRange.raw) {
@@ -2051,22 +2550,6 @@ async function updateTypingSuggestions(text, explicitRange = null) {
       showTypingSuggestions(merged.slice(0, 10), { start: activeRange.start, end: activeRange.end });
     }
   }
-}
-
-async function fetchChinesePinyinSuggestions(pinyinQuery, replaceRange) {
-  const cleanPinyin = pinyinQuery.replace(/[^a-zA-Z]/g, '').toLowerCase();
-  if (!cleanPinyin) return;
-  const reqId = ++imeSuggestRequestId;
-  const url = `https://inputtools.google.com/request?text=${encodeURIComponent(cleanPinyin)}&itc=zh-t-i0-pinyin&num=8&cp=0&cs=1&ie=utf-8&oe=utf-8&app=translate`;
-  try {
-    const res = await fetch(url, { method: 'GET', mode: 'cors', credentials: 'omit' });
-    if (!res.ok) return;
-    const data = await res.json();
-    if (reqId !== imeSuggestRequestId) return;
-    if (data && data[0] === 'SUCCESS' && data[1] && data[1][0] && Array.isArray(data[1][0][1])) {
-      showTypingSuggestions(data[1][0][1], replaceRange);
-    }
-  } catch (_) {}
 }
 
 function applyImeSuggestion(suggestion, replaceRange) {
@@ -2167,6 +2650,9 @@ async function updateRomanization(triggerSuggestions = false, forceSyncBox2 = fa
     autoResizeBoxes();
   } else {
     furiganaBackdrop.innerHTML = '';
+    if (triggerSuggestions && currentLang === 'zh') {
+      updateTypingSuggestions(text);
+    }
     if (!text.trim()) {
       alignedSegments = [];
       setBox2Content('', '', forceSyncBox2);
@@ -2175,12 +2661,14 @@ async function updateRomanization(triggerSuggestions = false, forceSyncBox2 = fa
     }
     const result = await romanizeNonJapaneseTextAndNumbers(text, currentLang);
     if (conversionId !== currentConversionId) return;
-    alignedSegments = text.trim().split(/\s+/).map(word => ({
-      src: word,
-      rom: currentLang === 'ru'
-        ? romanizeRussian(word)
-        : (currentLang === 'ko' ? romanizeKorean(word) : romanizeChinese(word))
-    }));
+    if (currentLang === 'zh') {
+      alignedSegments = buildChineseAlignedSegments(text);
+    } else {
+      alignedSegments = text.trim().split(/\s+/).map(word => ({
+        src: word,
+        rom: currentLang === 'ru' ? romanizeRussian(word) : romanizeKorean(word)
+      }));
+    }
     setBox2Content(result.plain, result.html, forceSyncBox2);
     autoResizeBoxes();
   }
