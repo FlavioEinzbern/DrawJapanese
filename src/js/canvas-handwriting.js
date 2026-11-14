@@ -318,7 +318,7 @@ async function fetchHandwritingCandidates() {
 }
 
 /* ==========================================================================
-   Candidate Rendering, Insertion & Canvas Romanization Popup
+   Candidate Rendering, IME Suggestions & Canvas Romanization Popup
    ========================================================================== */
 let canvasPopupEl = null;
 let canvasPopupRequestId = 0;
@@ -436,6 +436,41 @@ function renderCandidates(candidates) {
   });
 }
 
+/* Render typing / IME suggestions that replace the active Romaji/Kana word without showing the canvas popup */
+function renderImeSuggestions(suggestions, replaceRange) {
+  if (strokes.length > 0) return;
+
+  candidatesContainer.innerHTML = '';
+  if (!suggestions || suggestions.length === 0 || !replaceRange) {
+    candidatesContainer.classList.add('hidden');
+    return;
+  }
+
+  isInitialCandidateHintDismissed = true;
+  candidatesContainer.classList.remove('hidden');
+
+  suggestions.forEach((suggestion) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'candidate-btn px-3.5 py-1.5 bg-white hover:bg-indigo-50 active:bg-indigo-100 text-slate-800 hover:text-indigo-600 font-medium text-lg border border-slate-200 rounded-xl transition-all shadow-sm flex items-center justify-center min-w-[44px] select-none';
+    btn.textContent = suggestion;
+
+    btn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+    });
+
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof applyImeSuggestion === 'function') {
+        applyImeSuggestion(suggestion, replaceRange);
+      }
+    });
+
+    candidatesContainer.appendChild(btn);
+  });
+}
+
 function insertCharacter(char) {
   const start = textOutputBox.selectionStart ?? textOutputBox.value.length;
   const end = textOutputBox.selectionEnd ?? textOutputBox.value.length;
@@ -444,5 +479,5 @@ function insertCharacter(char) {
   textOutputBox.value = originalText.substring(0, start) + char + originalText.substring(end);
   textOutputBox.blur();
 
-  updateRomanization();
+  updateRomanization(false);
 }
