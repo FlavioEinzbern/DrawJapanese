@@ -93,15 +93,34 @@
   display: none;
 }
 
-/* Box 2 overlay and blue romanized numbers */
+/* Box 2 writable textarea + backdrop behavior */
+#romanized-output-box {
+  pointer-events: auto !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  cursor: text !important;
+}
+
 #romanized-output-box.overlay-box2-active {
   color: transparent;
+  caret-color: #1e293b;
   background-color: transparent;
 }
 
-#romanized-output-box.overlay-box2-active::selection {
-  background-color: rgba(16, 185, 129, 0.2);
-  color: transparent;
+/* Show native text directly when typing in Box 2 so edits are always visible */
+#romanized-output-box:focus,
+body.box2-focused #romanized-output-box {
+  color: #1e293b !important;
+  caret-color: #1e293b !important;
+}
+
+body.box2-focused #romanized-backdrop,
+#box2-wrapper:focus-within #romanized-backdrop {
+  opacity: 0 !important;
+}
+
+#romanized-output-box::selection {
+  background-color: rgba(16, 185, 129, 0.25);
 }
 
 .romanized-number {
@@ -291,9 +310,16 @@ body.dark-mode #furigana-backdrop {
   color: #f8fafc;
 }
 
-body.dark-mode #text-output-box.overlay-ja-active {
+body.dark-mode #text-output-box.overlay-ja-active,
+body.dark-mode #romanized-output-box.overlay-box2-active {
   color: transparent;
   caret-color: #f8fafc;
+}
+
+body.dark-mode #romanized-output-box:focus,
+body.dark-mode.box2-focused #romanized-output-box {
+  color: #f8fafc !important;
+  caret-color: #f8fafc !important;
 }
 
 body.dark-mode #romanized-backdrop {
@@ -472,7 +498,7 @@ body.canvas-expanded {
   overflow: hidden;
 }
 
-body.canvas-expanded .dual-boxes-grid {
+body.canvas-expanded:not(.box-focused) .dual-boxes-grid {
   display: none !important;
 }
 
@@ -507,7 +533,7 @@ body.canvas-expanded #btn-toggle-fullscreen {
 }
 
 /* Portrait Fullscreen: 2:3 canvas minus 20px + compact single-line boxes below */
-@media (orientation: portrait) {
+@media (orientation: portrait), (max-width: 900px) {
   body.canvas-expanded main,
   body.canvas-expanded .workspace-card {
     flex: 0 0 auto;
