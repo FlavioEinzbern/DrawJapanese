@@ -4,10 +4,18 @@
 let kuroshiroInstance = null;
 let kuroshiroAnalyzer = null;
 let isKuroshiroReady = false;
+let alignedSegments = [];
+let imeSuggestRequestId = 0;
 
 function katakanaToHiragana(str) {
   return str.replace(/[\u30A1-\u30F6]/g, (ch) =>
     String.fromCharCode(ch.charCodeAt(0) - 0x60)
+  );
+}
+
+function hiraganaToKatakana(str) {
+  return str.replace(/[\u3041-\u3096]/g, (ch) =>
+    String.fromCharCode(ch.charCodeAt(0) + 0x60)
   );
 }
 
@@ -154,12 +162,6 @@ function ensureGzippedDictLoader() {
   };
 }
 
-/*
- * 1. Merge irregular Japanese counter tokens (e.g. 一人, 二人, 二日..十日, 二十日, 二十歳)
- *    when Kuromoji splits them before particles like だけ / ほど / くらい / ずつ.
- * 2. Apply Japanese postposition grammar rules to は (ha vs. wa) and へ (he vs. e),
- *    tagging true particles so Box 1 renders <ruby>は<rt>わ</rt></ruby> and <ruby>へ<rt>え</rt></ruby>.
- */
 const PRECEDING_NUM_SURFACE_REGEX = /[0-9０-９零〇一二两三四五六七八九十百千万億亿]$/;
 const CLAUSE_BREAK_END_REGEX = /[\s\u3000、。，．・：；！？「『（［｛〈《【〔…‥〜～.,!?;:'"(\[{/\\]$/;
 
@@ -233,7 +235,6 @@ function hasPrecedingWordForParticle(tokens, index) {
   if (CLAUSE_BREAK_END_REGEX.test(prevSurf)) return false;
 
   if (prev.pos === '記号') {
-    // Allow particles immediately after closing quotes/brackets (e.g. 「私」は, （日本）へ)
     if (/^[」』）］｝〉》】〕"')\]}]+$/.test(prevSurf)) {
       return index >= 2 && hasPrecedingWordForParticle(tokens, index - 1);
     }
@@ -368,9 +369,58 @@ async function buildFuriganaHtmlFromTokens(tokens) {
   return html;
 }
 
+async function renderBox1FuriganaOnly(text) {
+  if (!text) {
+    furiganaBackdrop.innerHTML = '';
+    return;
+  }
+  if (isKuroshiroReady && kuroshiroInstance && kuroshiroAnalyzer) {
+    try {
+      const tokens = await kuroshiroAnalyzer.parse(text);
+      const furiganaHtml = await buildFuriganaHtmlFromTokens(tokens);
+      furiganaBackdrop.innerHTML = furiganaHtml.endsWith('\n')
+        ? furiganaHtml + '\u200b'
+        : furiganaHtml;
+      return;
+    } catch (e) {
+      console.warn('Furigana render fallback:', e);
+    }
+  }
+  furiganaBackdrop.innerHTML = fallbackJapaneseFuriganaHtml(text);
+}
+
+async function buildJapaneseAlignedSegments(tokens) {
+  const segs = [];
+  for (const tok of tokens) {
+    const src = tok.surface_form || '';
+    if (!src) continue;
+    const rawRom = await convertTokensWithKuroshiro([tok], {
+      to: 'romaji',
+      mode: 'spaced',
+      romajiSystem: 'hepburn'
+    });
+    const rom = postProcessJapaneseRomajiNumbers(rawRom).plain.trim();
+    segs.push({ src, rom });
+  }
+  return segs;
+}
+
+function buildFallbackJapaneseAlignedSegments(text) {
+  const segs = [];
+  for (const ch of text) {
+    if (/\s/.test(ch)) {
+      segs.push({ src: ch, rom: '' });
+    } else {
+      const rom = fallbackJapaneseRomanizeWithBlueNumbers(ch).plain.trim();
+      segs.push({ src: ch, rom });
+    }
+  }
+  return segs;
+}
+
 async function initKuroshiro() {
   ensureGzippedDictLoader();
-  ensureBox2Backdrop();
+  getBox2Backdrop();
 
   const KuroshiroClass = typeof Kuroshiro !== 'undefined' ? (Kuroshiro.default || Kuroshiro) : null;
   const KuromojiAnalyzerClass = typeof KuromojiAnalyzer !== 'undefined' ? (KuromojiAnalyzer.default || KuromojiAnalyzer) : null;
@@ -405,7 +455,7 @@ async function initKuroshiro() {
       kuroshiroAnalyzer = loaded.analyzer;
       isKuroshiroReady = true;
       setEngineStatus('ready', 'Kuroshiro + Kuromoji Ready');
-      updateRomanization();
+      updateRomanization(false, true);
       return;
     } catch (e) {
       console.warn(`Kuromoji failed at ${dictPath}:`, e.message);
@@ -413,7 +463,7 @@ async function initKuroshiro() {
   }
 
   setEngineStatus('ready-fallback', 'Ready (kanjiapi.dev Mode)');
-  updateRomanization();
+  updateRomanization(false, true);
 }
 
 function setEngineStatus(type, msg) {
@@ -441,38 +491,43 @@ function escapeHtml(str) {
 }
 
 /* ==========================================================================
-   Multilingual Number Romanizer & Blue Box 2 Backdrop
+   Collision-Free Box 2 Backdrop Helper & Multilingual Number Romanizer
    ========================================================================== */
-let romanizedBackdrop = null;
+function getBox2Backdrop() {
+  let backdrop = document.getElementById('romanized-backdrop');
+  if (backdrop) return backdrop;
 
-function ensureBox2Backdrop() {
-  if (romanizedBackdrop) return;
-  romanizedBackdrop = document.getElementById('romanized-backdrop');
-  if (romanizedBackdrop) return;
+  if (document.activeElement === romanizedOutputBox) return null;
 
   const wrapper = document.createElement('div');
   wrapper.id = 'box2-wrapper';
-  wrapper.className = 'relative w-full bg-slate-50/70 border border-slate-200 rounded-xl overflow-hidden';
+  wrapper.className = 'auto-grow-box relative w-full bg-slate-50/70 border border-slate-200 rounded-xl overflow-hidden transition-colors duration-150';
 
-  romanizedBackdrop = document.createElement('div');
-  romanizedBackdrop.id = 'romanized-backdrop';
-  romanizedBackdrop.setAttribute('aria-hidden', 'true');
-  romanizedBackdrop.className = 'box1-shared-metrics absolute inset-0 w-full h-full text-slate-700 pointer-events-none select-none overflow-hidden';
+  backdrop = document.createElement('div');
+  backdrop.id = 'romanized-backdrop';
+  backdrop.setAttribute('aria-hidden', 'true');
+  backdrop.className = 'box1-shared-metrics absolute inset-0 w-full h-full text-slate-700 pointer-events-none select-none overflow-hidden';
 
   const parent = romanizedOutputBox.parentNode;
-  parent.insertBefore(wrapper, romanizedOutputBox);
-  wrapper.appendChild(romanizedBackdrop);
-  wrapper.appendChild(romanizedOutputBox);
+  if (parent) {
+    parent.insertBefore(wrapper, romanizedOutputBox);
+    wrapper.appendChild(backdrop);
+    wrapper.appendChild(romanizedOutputBox);
+  }
 
   romanizedOutputBox.classList.add('overlay-box2-active', 'relative', 'z-10');
-  romanizedOutputBox.classList.remove('bg-slate-50/70', 'border', 'border-slate-200');
+  romanizedOutputBox.readOnly = false;
+  romanizedOutputBox.removeAttribute('readonly');
+  return backdrop;
 }
 
-function setBox2Content(plainText, htmlText) {
-  ensureBox2Backdrop();
-  romanizedOutputBox.value = plainText;
-  if (romanizedBackdrop) {
-    romanizedBackdrop.innerHTML = htmlText.endsWith('\n') ? htmlText + '\u200b' : htmlText;
+function setBox2Content(plainText, htmlText, forceSyncBox2 = false) {
+  const backdrop = getBox2Backdrop();
+  if (forceSyncBox2 || document.activeElement !== romanizedOutputBox) {
+    romanizedOutputBox.value = plainText;
+  }
+  if (backdrop) {
+    backdrop.innerHTML = htmlText.endsWith('\n') ? htmlText + '\u200b' : htmlText;
   }
 }
 
@@ -690,9 +745,6 @@ function romanizeNumberByLang(rawToken, lang) {
   return normalized;
 }
 
-/* ==========================================================================
-   Japanese Spaced Romaji Post-Processor & Fallback Furigana/Romaji
-   ========================================================================== */
 const COUNTER_AFTER_NUMBER_MAP = {
   '年': { kana: 'ねん', romaji: 'nen' },
   '月': { kana: 'がつ', romaji: 'gatsu' },
@@ -766,7 +818,6 @@ function canUseFallbackCompoundAt(str, i, sub) {
   return true;
 }
 
-/* Fallback Furigana HTML for Box 1: Furigana ONLY on Kanji (never on Arabic numbers) */
 function fallbackJapaneseFuriganaHtml(str) {
   let html = '';
   let i = 0;
@@ -919,9 +970,6 @@ function fallbackJapaneseRomanizeWithBlueNumbers(str) {
   };
 }
 
-/* ==========================================================================
-   Korean Hangul & Standalone Jamo Phonological Processor
-   ========================================================================== */
 function neutralizeCoda(jong) {
   if (!jong) return '';
   if (['ㄱ','ㄲ','ㅋ','ㄳ','ㄺ'].includes(jong)) return 'ㄱ';
@@ -967,7 +1015,6 @@ function romanizeKorean(str) {
       continue;
     }
 
-    // Rule A: Palatalization (구개음화)
     if (next.cho === 'ㅇ' && (next.jung === 'ㅣ' || next.jung === 'ㅕ')) {
       if (curr.jong === 'ㄷ') { curr.jong = ''; next.cho = 'ㅈ'; continue; }
       if (curr.jong === 'ㅌ') { curr.jong = ''; next.cho = 'ㅊ'; continue; }
@@ -979,7 +1026,6 @@ function romanizeKorean(str) {
       continue;
     }
 
-    // Rule B: Liaison / Resyllabification before vowel ('ㅇ')
     if (next.cho === 'ㅇ') {
       if (DOUBLE_JONG_SPLIT[curr.jong]) {
         const [rem, moved] = DOUBLE_JONG_SPLIT[curr.jong];
@@ -994,7 +1040,6 @@ function romanizeKorean(str) {
       continue;
     }
 
-    // Rule C: Aspiration / 'ㅎ' Coalescence (격음화)
     const ASPIRATION_TARGET = { 'ㄱ': 'ㅋ', 'ㄷ': 'ㅌ', 'ㅂ': 'ㅍ', 'ㅈ': 'ㅊ' };
     if (['ㅎ', 'ㄶ', 'ㅀ'].includes(curr.jong) && ASPIRATION_TARGET[next.cho]) {
       next.cho = ASPIRATION_TARGET[next.cho];
@@ -1017,19 +1062,16 @@ function romanizeKorean(str) {
 
     curr.jong = neutralizeCoda(curr.jong);
 
-    // Rule D: Nasalization of 'ㄹ' after non-'ㄹ' consonants
     if (next.cho === 'ㄹ' && ['ㄱ', 'ㄷ', 'ㅂ', 'ㅁ', 'ㅇ'].includes(curr.jong)) {
       next.cho = 'ㄴ';
     }
 
-    // Rule E: Obstruent Nasalization before 'ㄴ' or 'ㅁ'
     if (next.cho === 'ㄴ' || next.cho === 'ㅁ') {
       if (curr.jong === 'ㄱ') curr.jong = 'ㅇ';
       else if (curr.jong === 'ㄷ') curr.jong = 'ㄴ';
       else if (curr.jong === 'ㅂ') curr.jong = 'ㅁ';
     }
 
-    // Rule F: Liquidization of 'ㄴ'+'ㄹ' or 'ㄹ'+'ㄴ' -> 'ㄹ'+'ㄹ'
     if ((curr.jong === 'ㄴ' && next.cho === 'ㄹ') || (curr.jong === 'ㄹ' && next.cho === 'ㄴ')) {
       curr.jong = 'ㄹ';
       next.cho = 'ㄹ';
@@ -1057,9 +1099,6 @@ function romanizeKorean(str) {
   return result;
 }
 
-/* ==========================================================================
-   Russian & Chinese Transliterators
-   ========================================================================== */
 function romanizeRussian(str) {
   let res = '';
   for (const ch of str) {
@@ -1075,9 +1114,6 @@ function romanizeChinese(str) {
   return str;
 }
 
-/* ==========================================================================
-   Non-Japanese (zh, ko, ru) Text + Blue Number Romanizer
-   ========================================================================== */
 const NUMBER_SPLIT_REGEX = /([0-9０-９]+|[零〇一二两三四五六七八九十百千万億亿]+)/g;
 const IS_NUMBER_TOKEN_REGEX = /^([0-9０-９]+|[零〇一二两三四五六七八九十百千万億亿]+)$/;
 
@@ -1113,25 +1149,690 @@ async function romanizeNonJapaneseTextAndNumbers(text, lang) {
   };
 }
 
+/* ==========================================================================
+   Writable Box 2 Reverse Transliteration & Mobile-Keyboard IME Suggestions
+   ========================================================================== */
+const ROMAJI_TO_HIRA_MAP = (() => {
+  const map = {};
+  for (const [kana, rom] of Object.entries(KANA_MAP)) {
+    if (/^[\u3041-\u3096]+$/.test(kana) && rom && !map[rom]) {
+      map[rom] = kana;
+    }
+  }
+  Object.assign(map, {
+    'si': 'し', 'ti': 'ち', 'tu': 'つ', 'hu': 'ふ', 'zi': 'じ',
+    'sya': 'しゃ', 'syu': 'しゅ', 'syo': 'しょ',
+    'tya': 'ちゃ', 'tyu': 'ちゅ', 'tyo': 'ちょ',
+    'cya': 'ちゃ', 'cyu': 'ちゅ', 'cyo': 'ちょ',
+    'jya': 'じゃ', 'jyu': 'じゅ', 'jyo': 'じょ',
+    'zya': 'じゃ', 'zyu': 'じゅ', 'zyo': 'じょ',
+    'dya': 'ぢゃ', 'dyu': 'ぢゅ', 'dyo': 'ぢょ',
+    'pha': 'ふぁ', 'phi': 'ふぃ', 'phe': 'ふぇ', 'pho': 'ふぉ',
+    'la': 'ぁ', 'li': 'ぃ', 'lu': 'ぅ', 'le': 'ぇ', 'lo': 'ぉ',
+    'xa': 'ぁ', 'xi': 'ぃ', 'xu': 'ぅ', 'xe': 'ぇ', 'xo': 'ぉ',
+    'lya': 'ゃ', 'lyu': 'ゅ', 'lyo': 'ょ',
+    'xya': 'ゃ', 'xyu': 'ゅ', 'xyo': 'ょ',
+    'ltu': 'っ', 'xtu': 'っ', 'ltsu': 'っ', 'xtsu': 'っ',
+    'nn': 'ん', "n'": 'ん'
+  });
+  return map;
+})();
+
+const ROMAJI_KEYS_DESC = Object.keys(ROMAJI_TO_HIRA_MAP).sort((a, b) => b.length - a.length);
+
+function stripPendingRomajiTail(input) {
+  if (!input) return '';
+  const match = input.match(/(?:(?<![nN])[nN]|[bcdfghjklmpqrstvwxyzBCDFGHJKLMNPQRSTVWXYZ]{1,3})$/);
+  if (!match) return input;
+  const tail = match[0];
+  if (/^(nn|n')$/i.test(tail)) return input;
+  return input.slice(0, -tail.length);
+}
+
+/* Convert Romaji to Hiragana (lowercase) or Katakana (UPPERCASE) */
+function romajiToJapaneseKanaByCase(rawInput, isLiveBox2Typing = false) {
+  const input = isLiveBox2Typing ? stripPendingRomajiTail(rawInput) : rawInput;
+  let out = '';
+  let i = 0;
+
+  while (i < input.length) {
+    const ch = input[i];
+
+    if (/\s/.test(ch)) {
+      i++;
+      continue;
+    }
+
+    if (ch === '-') {
+      out += 'ー';
+      i++;
+      continue;
+    }
+
+    const rest = input.slice(i);
+    const lowerRest = rest.toLowerCase();
+
+    if (lowerRest.length >= 2) {
+      const c1 = lowerRest[0];
+      const c2 = lowerRest[1];
+      if (
+        (c1 === c2 && /^[bcdfghjklmpqrstvwxyz]$/.test(c1) && c1 !== 'n') ||
+        (c1 === 't' && c2 === 'c' && lowerRest[2] === 'h')
+      ) {
+        const isUpper = rest[0] >= 'A' && rest[0] <= 'Z';
+        out += isUpper ? 'ッ' : 'っ';
+        i++;
+        continue;
+      }
+    }
+
+    if (lowerRest.startsWith("n'") || lowerRest.startsWith('nn')) {
+      const isUpper = rest[0] === 'N';
+      out += isUpper ? 'ン' : 'ん';
+      i += 2;
+      continue;
+    }
+
+    let matchedKey = null;
+    for (const key of ROMAJI_KEYS_DESC) {
+      if (lowerRest.startsWith(key)) {
+        matchedKey = key;
+        break;
+      }
+    }
+
+    if (matchedKey) {
+      const rawChunk = rest.slice(0, matchedKey.length);
+      const isUpper = /[A-Z]/.test(rawChunk);
+      const hira = ROMAJI_TO_HIRA_MAP[matchedKey];
+      out += isUpper ? hiraganaToKatakana(hira) : hira;
+      i += matchedKey.length;
+      continue;
+    }
+
+    if (lowerRest[0] === 'n') {
+      const nextCh = lowerRest[1] || '';
+      if ((!nextCh && !isLiveBox2Typing) || (nextCh && !/^[aiueoy']$/.test(nextCh))) {
+        const isUpper = rest[0] === 'N';
+        out += isUpper ? 'ン' : 'ん';
+        i++;
+        continue;
+      }
+    }
+
+    if (!isLiveBox2Typing) {
+      out += ch;
+    }
+    i++;
+  }
+
+  return out;
+}
+
+const LATIN_TO_CYRILLIC_TOKENS = [
+  ['Shch', 'Щ'], ['SHCH', 'Щ'], ['shch', 'щ'],
+  ['Yo', 'Ё'], ['YO', 'Ё'], ['yo', 'ё'],
+  ['Zh', 'Ж'], ['ZH', 'Ж'], ['zh', 'ж'],
+  ['Kh', 'Х'], ['KH', 'Х'], ['kh', 'х'],
+  ['Ts', 'Ц'], ['TS', 'Ц'], ['ts', 'ц'],
+  ['Ch', 'Ч'], ['CH', 'Ч'], ['ch', 'ч'],
+  ['Sh', 'Ш'], ['SH', 'Ш'], ['sh', 'ш'],
+  ['Yu', 'Ю'], ['YU', 'Ю'], ['yu', 'ю'],
+  ['Ya', 'Я'], ['YA', 'Я'], ['ya', 'я'],
+  ['A', 'А'], ['B', 'Б'], ['V', 'В'], ['G', 'Г'], ['D', 'Д'],
+  ['E', 'Е'], ['Z', 'З'], ['I', 'И'], ['Y', 'Й'], ['K', 'К'],
+  ['L', 'Л'], ['M', 'М'], ['N', 'Н'], ['O', 'О'], ['P', 'П'],
+  ['R', 'Р'], ['S', 'С'], ['T', 'Т'], ['U', 'У'], ['F', 'Ф'],
+  ['a', 'а'], ['b', 'б'], ['v', 'в'], ['g', 'г'], ['d', 'д'],
+  ['e', 'е'], ['z', 'з'], ['i', 'и'], ['y', 'й'], ['k', 'к'],
+  ['l', 'л'], ['m', 'м'], ['n', 'н'], ['o', 'о'], ['p', 'п'],
+  ['r', 'р'], ['s', 'с'], ['t', 'т'], ['u', 'у'], ['f', 'ф'],
+  ['"', 'ъ'], ["'", 'ь']
+];
+
+function latinToRussianCyrillic(str) {
+  let out = '';
+  let i = 0;
+  while (i < str.length) {
+    let matched = false;
+    for (const [lat, cyr] of LATIN_TO_CYRILLIC_TOKENS) {
+      if (str.startsWith(lat, i)) {
+        out += cyr;
+        i += lat.length;
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      out += str[i];
+      i++;
+    }
+  }
+  return out;
+}
+
+const RR_CHO_LIST = [
+  ['kk', 1], ['tt', 4], ['pp', 8], ['ss', 10], ['jj', 13], ['ch', 14],
+  ['g', 0], ['k', 15], ['n', 2], ['d', 3], ['t', 16], ['r', 5], ['l', 5],
+  ['m', 6], ['b', 7], ['p', 17], ['s', 9], ['j', 12], ['h', 18]
+];
+const RR_JUNG_LIST = [
+  ['wae', 10], ['yae', 3], ['yeo', 6], ['wa', 9], ['oe', 11], ['wo', 14],
+  ['we', 15], ['wi', 16], ['ui', 19], ['ae', 1], ['ya', 2], ['eo', 4],
+  ['ye', 7], ['yo', 12], ['yu', 17], ['eu', 18],
+  ['a', 0], ['e', 5], ['o', 8], ['u', 13], ['i', 20]
+];
+const RR_JONG_LIST = [
+  ['ng', 21], ['k', 1], ['n', 4], ['t', 7], ['l', 8], ['r', 8], ['m', 16], ['p', 17], ['g', 1], ['b', 17], ['s', 19]
+];
+
+function romanizedToHangul(str) {
+  let out = '';
+  let i = 0;
+  const lower = str.toLowerCase();
+
+  while (i < lower.length) {
+    if (!/[a-z]/.test(lower[i])) {
+      out += str[i];
+      i++;
+      continue;
+    }
+
+    let choIdx = 11;
+    let choLen = 0;
+    for (const [rom, idx] of RR_CHO_LIST) {
+      if (lower.startsWith(rom, i)) {
+        choIdx = idx;
+        choLen = rom.length;
+        break;
+      }
+    }
+
+    let jungIdx = -1;
+    let jungLen = 0;
+    for (const [rom, idx] of RR_JUNG_LIST) {
+      if (lower.startsWith(rom, i + choLen)) {
+        jungIdx = idx;
+        jungLen = rom.length;
+        break;
+      }
+    }
+
+    if (jungIdx === -1) {
+      out += CHO_JAMO[choIdx] || str[i];
+      i += Math.max(1, choLen);
+      continue;
+    }
+
+    const posAfterVowel = i + choLen + jungLen;
+    let jongIdx = 0;
+    let jongLen = 0;
+
+    for (const [rom, idx] of RR_JONG_LIST) {
+      if (lower.startsWith(rom, posAfterVowel)) {
+        const afterJong = posAfterVowel + rom.length;
+        let followedByVowel = false;
+        if (rom !== 'ng') {
+          for (const [vRom] of RR_JUNG_LIST) {
+            if (lower.startsWith(vRom, afterJong)) {
+              followedByVowel = true;
+              break;
+            }
+          }
+        }
+        if (!followedByVowel) {
+          jongIdx = idx;
+          jongLen = rom.length;
+          break;
+        }
+      }
+    }
+
+    const code = 0xAC00 + (choIdx * 21 + jungIdx) * 28 + jongIdx;
+    out += String.fromCharCode(code);
+    i = posAfterVowel + jongLen;
+  }
+
+  return out;
+}
+
+function formatBox2BackdropWithNumbers(rawText) {
+  const parts = rawText.split(/([0-9０-９]+)/g).filter(Boolean);
+  return parts
+    .map(p => /^[0-9０-９]+$/.test(p)
+      ? `<span class="romanized-number">${escapeHtml(p)}</span>`
+      : escapeHtml(p))
+    .join('');
+}
+
+function matchUnchangedBox2Segments(rawBox2, segments) {
+  const validSegs = segments.filter(s => s && s.src);
+  let pos = 0;
+  let prefixIdx = 0;
+
+  while (prefixIdx < validSegs.length) {
+    const seg = validSegs[prefixIdx];
+    if (!seg.rom) {
+      prefixIdx++;
+      continue;
+    }
+    let scanPos = pos;
+    while (scanPos < rawBox2.length && /\s/.test(rawBox2[scanPos])) {
+      scanPos++;
+    }
+    const candidateSlice = rawBox2.slice(scanPos, scanPos + seg.rom.length);
+    if (candidateSlice.toLowerCase() === seg.rom.toLowerCase()) {
+      pos = scanPos + seg.rom.length;
+      prefixIdx++;
+    } else {
+      break;
+    }
+  }
+
+  let endPos = rawBox2.length;
+  let suffixIdx = validSegs.length;
+
+  while (suffixIdx > prefixIdx) {
+    const seg = validSegs[suffixIdx - 1];
+    if (!seg.rom) {
+      suffixIdx--;
+      continue;
+    }
+    let scanEnd = endPos;
+    while (scanEnd > pos && /\s/.test(rawBox2[scanEnd - 1])) {
+      scanEnd--;
+    }
+    const startCandidate = scanEnd - seg.rom.length;
+    if (startCandidate > pos && /\s/.test(rawBox2[startCandidate - 1])) {
+      const candidateSlice = rawBox2.slice(startCandidate, scanEnd);
+      if (candidateSlice.toLowerCase() === seg.rom.toLowerCase()) {
+        endPos = startCandidate;
+        suffixIdx--;
+        continue;
+      }
+    }
+    break;
+  }
+
+  return {
+    prefixSrc: validSegs.slice(0, prefixIdx).map(s => s.src).join(''),
+    suffixSrc: validSegs.slice(suffixIdx).map(s => s.src).join(''),
+    middleRomaji: rawBox2.slice(pos, endPos)
+  };
+}
+
+function convertBox2SubstringToBox1(subRomaji, lang) {
+  if (!subRomaji) return '';
+  if (lang === 'ja') return romajiToJapaneseKanaByCase(subRomaji, true);
+  if (lang === 'ru') return latinToRussianCyrillic(subRomaji);
+  if (lang === 'ko') return romanizedToHangul(subRomaji);
+  return subRomaji;
+}
+
+function showTypingSuggestions(suggestions, replaceRange) {
+  if (typeof renderImeSuggestions === 'function') {
+    renderImeSuggestions(suggestions, replaceRange);
+    return;
+  }
+
+  if (typeof strokes !== 'undefined' && strokes.length > 0) return;
+
+  candidatesContainer.innerHTML = '';
+  if (!suggestions || suggestions.length === 0 || !replaceRange) {
+    candidatesContainer.classList.add('hidden');
+    return;
+  }
+
+  if (typeof isInitialCandidateHintDismissed !== 'undefined') {
+    isInitialCandidateHintDismissed = true;
+  }
+  candidatesContainer.classList.remove('hidden');
+
+  suggestions.forEach((suggestion) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'candidate-btn px-3.5 py-1.5 bg-white hover:bg-indigo-50 active:bg-indigo-100 text-slate-800 hover:text-indigo-600 font-medium text-lg border border-slate-200 rounded-xl transition-all shadow-sm flex items-center justify-center min-w-[44px] select-none';
+    btn.textContent = suggestion;
+
+    btn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+    });
+
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      applyImeSuggestion(suggestion, replaceRange);
+    });
+
+    candidatesContainer.appendChild(btn);
+  });
+}
+
+function clearAlignedSegmentsAndSuggestions() {
+  alignedSegments = [];
+  showTypingSuggestions([], null);
+}
+
+async function handleBox2Input() {
+  const rawBox2 = romanizedOutputBox.value;
+  const backdrop = getBox2Backdrop();
+
+  if (backdrop) {
+    const html = formatBox2BackdropWithNumbers(rawBox2);
+    backdrop.innerHTML = html.endsWith('\n') ? html + '\u200b' : html;
+  }
+
+  if (!rawBox2.trim()) {
+    textOutputBox.value = '';
+    furiganaBackdrop.innerHTML = '';
+    charCount.textContent = '0 chars';
+    clearAlignedSegmentsAndSuggestions();
+    autoResizeBoxes();
+    return;
+  }
+
+  const { prefixSrc, suffixSrc, middleRomaji } = matchUnchangedBox2Segments(rawBox2, alignedSegments);
+  const convertedMiddle = convertBox2SubstringToBox1(middleRomaji, currentLang);
+
+  const newBox1Text = prefixSrc + convertedMiddle + suffixSrc;
+  textOutputBox.value = newBox1Text;
+  charCount.textContent = `${newBox1Text.length} char${newBox1Text.length === 1 ? '' : 's'}`;
+
+  if (currentLang === 'ja') {
+    await renderBox1FuriganaOnly(newBox1Text);
+    const trimmedMidRom = middleRomaji.trim();
+    if (trimmedMidRom) {
+      const replaceStart = prefixSrc.length;
+      const replaceEnd = replaceStart + convertedMiddle.length;
+      updateTypingSuggestions(newBox1Text, {
+        start: replaceStart,
+        end: replaceEnd,
+        rawRomajiOverride: trimmedMidRom
+      });
+    } else {
+      showTypingSuggestions([], null);
+    }
+  } else if (currentLang === 'zh') {
+    furiganaBackdrop.innerHTML = '';
+    const trimmedMidRom = middleRomaji.trim();
+    if (trimmedMidRom) {
+      const replaceStart = prefixSrc.length;
+      const replaceEnd = replaceStart + convertedMiddle.length;
+      fetchChinesePinyinSuggestions(trimmedMidRom, { start: replaceStart, end: replaceEnd });
+    } else {
+      showTypingSuggestions([], null);
+    }
+  } else {
+    furiganaBackdrop.innerHTML = '';
+    showTypingSuggestions([], null);
+  }
+
+  autoResizeBoxes();
+}
+
+const LOCAL_JA_IME_DICT = {
+  'わたし': ['私', 'わたし', '私は', '私が', '私の', '私も'],
+  'わたしは': ['私は', 'わたしは'],
+  'わたしの': ['私の', 'わたしの'],
+  'ぼく': ['僕', 'ぼく', '僕は', '僕が', '僕の'],
+  'おれ': ['俺', 'おれ', '俺は', '俺の'],
+  'あなた': ['貴方', 'あなた', 'あなたは', 'あなたの'],
+  'かれ': ['彼', 'かれ', '彼は', '彼の'],
+  'かのじょ': ['彼女', 'かのじょ', '彼女は', '彼女の'],
+  'にほん': ['日本', 'にほん', '日本へ', '日本の', '日本語'],
+  'にほんご': ['日本語', 'にほんご'],
+  'とうきょう': ['東京', 'とうきょう', '東京へ'],
+  'がっこう': ['学校', 'がっこう', '学校へ', '学校に'],
+  'がくせい': ['学生', 'がくせい', '学生です'],
+  'せんせい': ['先生', 'せんせい'],
+  'だいがく': ['大学', 'だいがく'],
+  'ともだち': ['友達', 'ともだち'],
+  'とも': ['友', '共', 'とも'],
+  'ひと': ['人', 'ひと'],
+  'ひとり': ['一人', 'ひとり', '一人だけ', '一人で'],
+  'ふたり': ['二人', 'ふたり', '二人だけ', '二人だけの', '二人で'],
+  'ふたりだけの': ['二人だけの', 'ふたりだけの'],
+  'ほん': ['本', 'ほん'],
+  'あい': ['愛', 'あい'],
+  'みず': ['水', 'みず'],
+  'ひ': ['日', '火', 'ひ'],
+  'つき': ['月', 'つき'],
+  'とし': ['年', 'とし'],
+  'じかん': ['時間', 'じかん'],
+  'いま': ['今', 'いま'],
+  'きょう': ['今日', 'きょう', '今日は'],
+  'あした': ['明日', 'あした', '明日は'],
+  'きのう': ['昨日', 'きのう', '昨日は'],
+  'まいにち': ['毎日', 'まいにち'],
+  'てんき': ['天気', 'てんき', 'いい天気'],
+  'たべる': ['食べる', 'たべる', '食べます'],
+  'みる': ['見る', 'みる', '見ます'],
+  'きく': ['聞く', '聴く', 'きく'],
+  'いく': ['行く', 'いく', '行きます'],
+  'くる': ['来る', 'くる', '来ます'],
+  'する': ['する', 'します'],
+  'なに': ['何', 'なに', '何が', '何を'],
+  'すき': ['好き', 'すき', '好きです', '大好き'],
+  'だいすき': ['大好き', 'だいすき'],
+  'げんき': ['元気', 'げんき', 'お元気ですか'],
+  'こんにちは': ['こんにちは', '今日は'],
+  'こんばんは': ['こんばんは', '今晩は'],
+  'ありがとう': ['ありがとう', 'ありがとうございます', '有難う'],
+  'おはよう': ['おはよう', 'おはようございます'],
+  'さようなら': ['さようなら', '左様なら'],
+  'でんしゃ': ['電車', 'でんしゃ'],
+  'くるま': ['車', 'くるま'],
+  'えき': ['駅', 'えき'],
+  'いえ': ['家', 'いえ'],
+  'へや': ['部屋', 'へや'],
+  'しごと': ['仕事', 'しごと'],
+  'でんわ': ['電話', 'でんわ'],
+  'おんがく': ['音楽', 'おんがく'],
+  'えいが': ['映画', 'えいが'],
+  'ねこ': ['猫', 'ねこ'],
+  'いぬ': ['犬', 'いぬ']
+};
+
+function extractActiveJapaneseQueryRange(text, explicitRange) {
+  if (explicitRange) {
+    const raw = explicitRange.rawRomajiOverride || text.slice(explicitRange.start, explicitRange.end);
+    if (raw && raw.trim()) {
+      return { start: explicitRange.start, end: explicitRange.end, raw: raw.trim() };
+    }
+  }
+
+  const cursor = (document.activeElement === textOutputBox && textOutputBox.selectionEnd != null)
+    ? textOutputBox.selectionEnd
+    : text.length;
+
+  const beforeCursor = text.slice(0, cursor);
+  const match = beforeCursor.match(/([a-zA-Z']+|[ぁ-んァ-ヶー]+)$/);
+  if (!match) return null;
+
+  const raw = match[1];
+  const start = cursor - raw.length;
+  return { start, end: cursor, raw };
+}
+
+async function fetchGoogleJapaneseTransliteration(hiraQuery) {
+  const endpoints = [
+    `https://inputtools.google.com/request?text=${encodeURIComponent(hiraQuery)}&itc=ja-t-ja-hira-i0-und&num=8&cp=0&cs=1&ie=utf-8&oe=utf-8&app=translate`,
+    `https://www.google.com/inputtools/request?text=${encodeURIComponent(hiraQuery)}&ime=transliteration_ja_Hira_ja&num=8&cp=0&cs=1&ie=utf-8&oe=utf-8&app=jsapi`
+  ];
+
+  for (const url of endpoints) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1800);
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        mode: 'cors',
+        credentials: 'omit',
+        signal: controller.signal
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data && data[0] === 'SUCCESS' && data[1] && data[1][0] && Array.isArray(data[1][0][1])) {
+        return data[1][0][1];
+      }
+    } catch (_) {
+      // Fall back to local dictionary
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return [];
+}
+
+function buildLocalJapaneseSuggestions(hiraQuery, kataQuery) {
+  const results = [];
+  const addUnique = (val) => {
+    if (val && !results.includes(val)) results.push(val);
+  };
+
+  if (LOCAL_JA_IME_DICT[hiraQuery]) {
+    LOCAL_JA_IME_DICT[hiraQuery].forEach(addUnique);
+  }
+
+  const endings = ['は', 'が', 'を', 'に', 'へ', 'で', 'と', 'の', 'も', 'から', 'まで', 'だけ', 'だけの', 'です', 'ます'];
+  for (const p of endings) {
+    if (hiraQuery.length > p.length && hiraQuery.endsWith(p)) {
+      const stem = hiraQuery.slice(0, -p.length);
+      if (LOCAL_JA_IME_DICT[stem]) {
+        addUnique(LOCAL_JA_IME_DICT[stem][0] + p);
+      } else if (stem === 'わたし' || stem === 'ぼく') {
+        addUnique((stem === 'わたし' ? '私' : '僕') + p);
+      }
+    }
+  }
+
+  for (const [kanji, info] of Object.entries(KANJI_FALLBACK)) {
+    if (info.kana === hiraQuery) {
+      addUnique(kanji);
+    }
+  }
+
+  if (hiraQuery.length >= 2) {
+    for (const [key, list] of Object.entries(LOCAL_JA_IME_DICT)) {
+      if (key.startsWith(hiraQuery) && key !== hiraQuery) {
+        addUnique(list[0]);
+        if (results.length >= 8) break;
+      }
+    }
+  }
+
+  addUnique(hiraQuery);
+  addUnique(kataQuery);
+
+  return results.slice(0, 10);
+}
+
+async function updateTypingSuggestions(text, explicitRange = null) {
+  if (currentLang !== 'ja') return;
+  if (typeof strokes !== 'undefined' && strokes.length > 0) return;
+
+  const activeRange = extractActiveJapaneseQueryRange(text, explicitRange);
+  if (!activeRange || !activeRange.raw) {
+    showTypingSuggestions([], null);
+    return;
+  }
+
+  const reqId = ++imeSuggestRequestId;
+  const raw = activeRange.raw;
+  const isRomaji = /^[a-zA-Z'\s-]+$/.test(raw);
+  const hiraQuery = isRomaji
+    ? katakanaToHiragana(romajiToJapaneseKanaByCase(raw.toLowerCase(), false))
+    : katakanaToHiragana(raw);
+  const kataQuery = hiraganaToKatakana(hiraQuery);
+
+  if (!hiraQuery) {
+    showTypingSuggestions([], null);
+    return;
+  }
+
+  const localList = buildLocalJapaneseSuggestions(hiraQuery, kataQuery);
+  showTypingSuggestions(localList, { start: activeRange.start, end: activeRange.end });
+
+  if (/^[\u3041-\u3096ー]+$/.test(hiraQuery)) {
+    const remoteList = await fetchGoogleJapaneseTransliteration(hiraQuery);
+    if (reqId !== imeSuggestRequestId) return;
+    if (remoteList.length > 0) {
+      const merged = [];
+      for (const item of [...remoteList, ...localList]) {
+        if (item && !merged.includes(item)) merged.push(item);
+      }
+      showTypingSuggestions(merged.slice(0, 10), { start: activeRange.start, end: activeRange.end });
+    }
+  }
+}
+
+async function fetchChinesePinyinSuggestions(pinyinQuery, replaceRange) {
+  const cleanPinyin = pinyinQuery.replace(/[^a-zA-Z]/g, '').toLowerCase();
+  if (!cleanPinyin) return;
+  const reqId = ++imeSuggestRequestId;
+  const url = `https://inputtools.google.com/request?text=${encodeURIComponent(cleanPinyin)}&itc=zh-t-i0-pinyin&num=8&cp=0&cs=1&ie=utf-8&oe=utf-8&app=translate`;
+  try {
+    const res = await fetch(url, { method: 'GET', mode: 'cors', credentials: 'omit' });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (reqId !== imeSuggestRequestId) return;
+    if (data && data[0] === 'SUCCESS' && data[1] && data[1][0] && Array.isArray(data[1][0][1])) {
+      showTypingSuggestions(data[1][0][1], replaceRange);
+    }
+  } catch (_) {}
+}
+
+function applyImeSuggestion(suggestion, replaceRange) {
+  if (!replaceRange) return;
+  const wasBox2Focused = document.activeElement === romanizedOutputBox;
+  const currentText = textOutputBox.value;
+  const before = currentText.slice(0, replaceRange.start);
+  const after = currentText.slice(replaceRange.end);
+  const nextText = before + suggestion + after;
+
+  textOutputBox.value = nextText;
+  const newCursorPos = before.length + suggestion.length;
+
+  showTypingSuggestions([], null);
+  updateRomanization(false, true).then(() => {
+    if (wasBox2Focused) {
+      romanizedOutputBox.focus();
+      const endLen = romanizedOutputBox.value.length;
+      romanizedOutputBox.setSelectionRange(endLen, endLen);
+    } else {
+      textOutputBox.focus();
+      textOutputBox.setSelectionRange(newCursorPos, newCursorPos);
+    }
+  });
+}
+
+/* ==========================================================================
+   Main Romanization Sync (Box 1 -> Box 2 + Aligned Segments Update)
+   ========================================================================== */
 let currentConversionId = 0;
 
-async function updateRomanization() {
-  ensureBox2Backdrop();
+async function updateRomanization(triggerSuggestions = false, forceSyncBox2 = false) {
   const text = textOutputBox.value;
   const conversionId = ++currentConversionId;
   charCount.textContent = `${text.length} char${text.length === 1 ? '' : 's'}`;
 
   if (!text) {
     furiganaBackdrop.innerHTML = '';
-    setBox2Content('', '');
+    clearAlignedSegmentsAndSuggestions();
+    setBox2Content('', '', true);
     autoResizeBoxes();
     return;
   }
 
   if (currentLang === 'ja') {
+    if (triggerSuggestions) {
+      updateTypingSuggestions(text);
+    }
+
     if (!text.trim()) {
       furiganaBackdrop.innerHTML = escapeHtml(text);
-      setBox2Content('', '');
+      alignedSegments = [];
+      setBox2Content('', '', forceSyncBox2);
       autoResizeBoxes();
       return;
     }
@@ -1145,15 +1846,17 @@ async function updateRomanization() {
           mode: 'spaced',
           romajiSystem: 'hepburn'
         });
+        const newSegments = await buildJapaneseAlignedSegments(tokens);
 
         if (conversionId !== currentConversionId || currentLang !== 'ja') return;
 
+        alignedSegments = newSegments;
         furiganaBackdrop.innerHTML = furiganaHtml.endsWith('\n')
           ? furiganaHtml + '\u200b'
           : furiganaHtml;
 
         const romResult = postProcessJapaneseRomajiNumbers(rawRomaji);
-        setBox2Content(romResult.plain, romResult.html);
+        setBox2Content(romResult.plain, romResult.html, forceSyncBox2);
         autoResizeBoxes();
         return;
       } catch (e) {
@@ -1163,7 +1866,8 @@ async function updateRomanization() {
 
     furiganaBackdrop.innerHTML = fallbackJapaneseFuriganaHtml(text);
     const initialFallbackRom = fallbackJapaneseRomanizeWithBlueNumbers(text);
-    setBox2Content(initialFallbackRom.plain, initialFallbackRom.html);
+    alignedSegments = buildFallbackJapaneseAlignedSegments(text);
+    setBox2Content(initialFallbackRom.plain, initialFallbackRom.html, forceSyncBox2);
     autoResizeBoxes();
 
     await ensureKanjiReadingsLoaded(text);
@@ -1171,18 +1875,26 @@ async function updateRomanization() {
 
     furiganaBackdrop.innerHTML = fallbackJapaneseFuriganaHtml(text);
     const updatedFallbackRom = fallbackJapaneseRomanizeWithBlueNumbers(text);
-    setBox2Content(updatedFallbackRom.plain, updatedFallbackRom.html);
+    alignedSegments = buildFallbackJapaneseAlignedSegments(text);
+    setBox2Content(updatedFallbackRom.plain, updatedFallbackRom.html, forceSyncBox2);
     autoResizeBoxes();
   } else {
     furiganaBackdrop.innerHTML = '';
     if (!text.trim()) {
-      setBox2Content('', '');
+      alignedSegments = [];
+      setBox2Content('', '', forceSyncBox2);
       autoResizeBoxes();
       return;
     }
     const result = await romanizeNonJapaneseTextAndNumbers(text, currentLang);
     if (conversionId !== currentConversionId) return;
-    setBox2Content(result.plain, result.html);
+    alignedSegments = text.trim().split(/\s+/).map(word => ({
+      src: word,
+      rom: currentLang === 'ru'
+        ? romanizeRussian(word)
+        : (currentLang === 'ko' ? romanizeKorean(word) : romanizeChinese(word))
+    }));
+    setBox2Content(result.plain, result.html, forceSyncBox2);
     autoResizeBoxes();
   }
 }
