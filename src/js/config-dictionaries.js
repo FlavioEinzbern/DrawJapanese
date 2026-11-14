@@ -7,7 +7,9 @@ const candidatesContainer = document.getElementById('candidates-container');
 const box1Wrapper = document.getElementById('box1-wrapper');
 const textOutputBox = document.getElementById('text-output-box');
 const furiganaBackdrop = document.getElementById('furigana-backdrop');
+const box2Wrapper = document.getElementById('box2-wrapper');
 const romanizedOutputBox = document.getElementById('romanized-output-box');
+const romanizedBackdrop = document.getElementById('romanized-backdrop');
 const statusBadge = document.getElementById('status-badge');
 const statusText = document.getElementById('status-text');
 const recognizingIndicator = document.getElementById('recognizing-indicator');
@@ -30,7 +32,7 @@ const LANGUAGES = {
     guideType: 'cjk',
     romajiName: 'Romaji (Hepburn)',
     instruction: 'Draw Japanese (Kanji, Hiragana, Katakana)',
-    desc: 'Hiragana, Katakana & Joyo Kanji to Romaji'
+    desc: 'Editable — lowercase → Hiragana, UPPERCASE → Katakana'
   },
   zh: {
     id: 'zh',
@@ -39,7 +41,7 @@ const LANGUAGES = {
     guideType: 'cjk',
     romajiName: 'Pinyin (with Tones)',
     instruction: 'Draw Chinese Characters (Hanzi / Hanja)',
-    desc: 'Simplified & Traditional Hanzi to Pinyin'
+    desc: 'Editable — Pinyin to Simplified & Traditional Hanzi'
   },
   ko: {
     id: 'ko',
@@ -48,7 +50,7 @@ const LANGUAGES = {
     guideType: 'cjk',
     romajiName: 'Revised Romanization (RR)',
     instruction: 'Draw Korean Characters (Hangul)',
-    desc: 'Standard Revised Romanization of Korean'
+    desc: 'Editable — Revised Romanization (RR) to Hangul'
   },
   ru: {
     id: 'ru',
@@ -57,7 +59,7 @@ const LANGUAGES = {
     guideType: 'cyrillic',
     romajiName: 'Latin Transliteration',
     instruction: 'Draw Russian Cyrillic (Print or Cursive)',
-    desc: 'BGN/PCGN & GOST Cyrillic Transliteration'
+    desc: 'Editable — Latin Transliteration to Russian Cyrillic'
   }
 };
 
@@ -76,7 +78,7 @@ const KANA_MAP = {
   'は':'ha','ひ':'hi','ふ':'fu','へ':'he','ほ':'ho',
   'ま':'ma','み':'mi','む':'mu','め':'me','も':'mo',
   'や':'ya','ゆ':'yu','よ':'yo',
-  'ら':'ra','り':'ri','る':'ru','れ':'re','ろ':'ro',
+  'ら':'ra','り':'ri','る':'ru','れ':'れ','ろ':'ro',
   'わ':'wa','ゐ':'wi','ゑ':'we','を':'wo','ん':'n',
   'が':'ga','ぎ':'gi','ぐ':'gu','げ':'ge','ご':'go',
   'ざ':'za','じ':'ji','ず':'zu','ぜ':'ze','ぞ':'zo',
@@ -157,6 +159,7 @@ const KANA_MAP = {
   'ァ':'a','ィ':'i','ゥ':'u','ェ':'e','ォ':'o','ャ':'ya','ュ':'yu','ョ':'yo','ヮ':'wa','ヵ':'ka','ヶ':'ke',
   'ー': '-'
 };
+KANA_MAP['れ'] = 're';
 
 // Irregular Japanese counters that Kuromoji splits when followed by particles like だけ / ほど / くらい
 const IRREGULAR_COUNTER_COMPOUNDS = {
