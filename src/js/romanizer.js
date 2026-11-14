@@ -7,6 +7,10 @@ let isKuroshiroReady = false;
 let alignedSegments = [];
 let imeSuggestRequestId = 0;
 
+/* In-memory Reading (Hiragana) -> Ranked Kanji Surface Forms extracted from Kuromoji */
+const KUROMOJI_READING_INDEX = new Map();
+let isKuromojiIndexBuilt = false;
+
 function katakanaToHiragana(str) {
   return str.replace(/[\u30A1-\u30F6]/g, (ch) =>
     String.fromCharCode(ch.charCodeAt(0) - 0x60)
@@ -160,6 +164,78 @@ function ensureGzippedDictLoader() {
         if (typeof xhr.onerror === 'function') xhr.onerror(err);
       });
   };
+}
+
+/*
+ * Build a non-blocking Hiragana Reading -> Ranked Kanji Words index
+ * directly from Kuromoji's already-loaded in-memory IPADIC dictionary (~160k words).
+ */
+function buildKuromojiReadingIndex(analyzer) {
+  if (isKuromojiIndexBuilt || !analyzer || !analyzer._analyzer) return;
+  const tokenizer = analyzer._analyzer;
+  const tid = tokenizer.token_info_dictionary;
+  if (!tid || !tid.target_map || typeof tid.getFeatures !== 'function') return;
+
+  isKuromojiIndexBuilt = true;
+  const trieIds = Object.keys(tid.target_map);
+  const total = trieIds.length;
+  let cursor = 0;
+  const CHUNK_SIZE = 6000;
+
+  function processChunk() {
+    const limit = Math.min(cursor + CHUNK_SIZE, total);
+    for (; cursor < limit; cursor++) {
+      const tokenInfoIds = tid.target_map[trieIds[cursor]];
+      if (!tokenInfoIds) continue;
+
+      for (let j = 0; j < tokenInfoIds.length; j++) {
+        const infoId = tokenInfoIds[j];
+        const featStr = tid.getFeatures(String(infoId));
+        if (!featStr) continue;
+
+        const parts = featStr.split(',');
+        const surface = parts[0];
+        const pos = parts[1];
+        const readingKata = parts[8];
+
+        if (!surface || !readingKata || readingKata === '*' || pos === '記号') continue;
+        // Index entries that contain Kanji or useful vocabulary
+        if (!KANJI_REGEX.test(surface) && surface.length < 2) continue;
+
+        const hira = katakanaToHiragana(readingKata);
+        if (!hira || !/^[\u3041-\u3096ー]+$/.test(hira)) continue;
+
+        const cost = (tid.dictionary && typeof tid.dictionary.getShort === 'function')
+          ? tid.dictionary.getShort(infoId + 4)
+          : 5000;
+
+        let list = KUROMOJI_READING_INDEX.get(hira);
+        if (!list) {
+          list = [];
+          KUROMOJI_READING_INDEX.set(hira, list);
+        }
+
+        const existing = list.find(item => item.surf === surface);
+        if (existing) {
+          if (cost < existing.cost) existing.cost = cost;
+        } else {
+          list.push({ surf: surface, cost });
+          list.sort((a, b) => a.cost - b.cost);
+          if (list.length > 8) list.pop();
+        }
+      }
+    }
+
+    if (cursor < total) {
+      if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(processChunk, { timeout: 100 });
+      } else {
+        setTimeout(processChunk, 8);
+      }
+    }
+  }
+
+  processChunk();
 }
 
 const PRECEDING_NUM_SURFACE_REGEX = /[0-9０-９零〇一二两三四五六七八九十百千万億亿]$/;
@@ -454,6 +530,7 @@ async function initKuroshiro() {
       kuroshiroInstance = loaded.ks;
       kuroshiroAnalyzer = loaded.analyzer;
       isKuroshiroReady = true;
+      buildKuromojiReadingIndex(loaded.analyzer);
       setEngineStatus('ready', 'Kuroshiro + Kuromoji Ready');
       updateRomanization(false, true);
       return;
@@ -1150,7 +1227,7 @@ async function romanizeNonJapaneseTextAndNumbers(text, lang) {
 }
 
 /* ==========================================================================
-   Writable Box 2 Reverse Transliteration & Mobile-Keyboard IME Suggestions
+   Writable Box 2 Reverse Transliteration & Hybrid Phrase/Kanji IME Engine
    ========================================================================== */
 const ROMAJI_TO_HIRA_MAP = (() => {
   const map = {};
@@ -1189,7 +1266,6 @@ function stripPendingRomajiTail(input) {
   return input.slice(0, -tail.length);
 }
 
-/* Convert Romaji to Hiragana (lowercase) or Katakana (UPPERCASE) */
 function romajiToJapaneseKanaByCase(rawInput, isLiveBox2Typing = false) {
   const input = isLiveBox2Typing ? stripPendingRomajiTail(rawInput) : rawInput;
   let out = '';
@@ -1605,6 +1681,8 @@ const LOCAL_JA_IME_DICT = {
   'きのう': ['昨日', 'きのう', '昨日は'],
   'まいにち': ['毎日', 'まいにち'],
   'てんき': ['天気', 'てんき', 'いい天気'],
+  'いいてんき': ['いい天気', '良い天気'],
+  'なまえ': ['名前', 'なまえ'],
   'たべる': ['食べる', 'たべる', '食べます'],
   'みる': ['見る', 'みる', '見ます'],
   'きく': ['聞く', '聴く', 'きく'],
@@ -1633,6 +1711,288 @@ const LOCAL_JA_IME_DICT = {
   'いぬ': ['犬', 'いぬ']
 };
 
+function lookupWordCandidatesForHira(hiraWord) {
+  const cands = [];
+  const add = (w) => {
+    if (w && !cands.includes(w)) cands.push(w);
+  };
+
+  if (LOCAL_JA_IME_DICT[hiraWord]) {
+    LOCAL_JA_IME_DICT[hiraWord].forEach(add);
+  }
+  if (KUROMOJI_READING_INDEX.has(hiraWord)) {
+    for (const item of KUROMOJI_READING_INDEX.get(hiraWord)) {
+      add(item.surf);
+    }
+  }
+  for (const [kanji, info] of Object.entries(KANJI_FALLBACK)) {
+    if (info.kana === hiraWord) add(kanji);
+  }
+  return cands;
+}
+
+/*
+ * Offline Cohesive Phrase Builder:
+ * Segments multi-word Hiragana input across grammatical particles & verb endings
+ * using Kuromoji's 160k-word reading index + LOCAL_JA_IME_DICT.
+ */
+const GRAMMAR_PARTICLES = new Set(['は', 'が', 'を', 'に', 'へ', 'で', 'と', 'の', 'も', 'や', 'か', 'ね', 'よ']);
+const MULTI_CHAR_ENDINGS = ['だけの', 'だけ', 'から', 'まで', 'より', 'ほど', 'くらい', 'ぐらい', 'です', 'ます', 'でした', 'ました', 'ません', 'ない', 'たい'];
+
+function assembleOfflineKanjiPhrase(hiraStr) {
+  if (!hiraStr || hiraStr.length < 2) return [];
+
+  const n = hiraStr.length;
+  // dp[i] = { cost, text, altText }
+  const dp = new Array(n + 1).fill(null);
+  dp[0] = { cost: 0, text: '', altText: '' };
+
+  for (let i = 0; i < n; i++) {
+    if (!dp[i]) continue;
+
+    // 1. Try multi-character grammatical endings / particles
+    for (const ending of MULTI_CHAR_ENDINGS) {
+      if (i > 0 && hiraStr.startsWith(ending, i)) {
+        const nextIdx = i + ending.length;
+        const stepCost = 1800;
+        const newCost = dp[i].cost + stepCost;
+        if (!dp[nextIdx] || newCost < dp[nextIdx].cost) {
+          dp[nextIdx] = {
+            cost: newCost,
+            text: dp[i].text + ending,
+            altText: dp[i].altText + ending
+          };
+        }
+      }
+    }
+
+    // 2. Try single-character particle (when preceded by a word)
+    if (i > 0 && GRAMMAR_PARTICLES.has(hiraStr[i])) {
+      const p = hiraStr[i];
+      const nextIdx = i + 1;
+      const newCost = dp[i].cost + 1400;
+      if (!dp[nextIdx] || newCost < dp[nextIdx].cost) {
+        dp[nextIdx] = {
+          cost: newCost,
+          text: dp[i].text + p,
+          altText: dp[i].altText + p
+        };
+      }
+    }
+
+    // 3. Try vocabulary spans from length 1 up to 10
+    const maxLen = Math.min(10, n - i);
+    for (let len = maxLen; len >= 1; len--) {
+      const sub = hiraStr.substr(i, len);
+      const wordCands = lookupWordCandidatesForHira(sub);
+      if (wordCands.length > 0) {
+        const bestWord = wordCands[0];
+        const secondWord = wordCands[1] || bestWord;
+        const kuroEntry = KUROMOJI_READING_INDEX.get(sub);
+        const baseCost = LOCAL_JA_IME_DICT[sub]
+          ? 2200
+          : (kuroEntry && kuroEntry[0] ? Math.max(1500, kuroEntry[0].cost) : 4500);
+        // Prefer longer meaningful words over single-char splits
+        const spanCost = baseCost - (len * 350);
+        const nextIdx = i + len;
+        const newCost = dp[i].cost + spanCost;
+
+        if (!dp[nextIdx] || newCost < dp[nextIdx].cost) {
+          dp[nextIdx] = {
+            cost: newCost,
+            text: dp[i].text + bestWord,
+            altText: dp[i].altText + secondWord
+          };
+        }
+      } else if (len === 1) {
+        // Unmatched single kana fallback
+        const nextIdx = i + 1;
+        const newCost = dp[i].cost + 8500;
+        if (!dp[nextIdx] || newCost < dp[nextIdx].cost) {
+          dp[nextIdx] = {
+            cost: newCost,
+            text: dp[i].text + sub,
+            altText: dp[i].altText + sub
+          };
+        }
+      }
+    }
+  }
+
+  const out = [];
+  if (dp[n]) {
+    if (dp[n].text && dp[n].text !== hiraStr) out.push(dp[n].text);
+    if (dp[n].altText && dp[n].altText !== hiraStr && !out.includes(dp[n].altText)) {
+      out.push(dp[n].altText);
+    }
+  }
+  return out;
+}
+
+/*
+ * Google Japanese Input CGI API (`www.google.com/transliterate?langpair=ja-Hira|ja`)
+ * Uses cross-origin JSONP first, with direct/proxy fetch fallback.
+ * Parses multi-segment bunsetsu responses into full cohesive phrases + segment candidates.
+ */
+function parseGoogleTransliterateBunsetsu(data) {
+  if (!Array.isArray(data) || data.length === 0) return [];
+  const results = [];
+  const addUnique = (s) => {
+    if (s && !results.includes(s)) results.push(s);
+  };
+
+  if (data.length === 1) {
+    const cands = Array.isArray(data[0][1]) ? data[0][1] : [];
+    cands.forEach(addUnique);
+    return results;
+  }
+
+  // Multi-clause phrase: join the top candidate of every bunsetsu into a cohesive sentence
+  const top1Phrase = data.map(seg => (seg[1] && seg[1][0]) ? seg[1][0] : seg[0]).join('');
+  addUnique(top1Phrase);
+
+  // Generate cohesive phrase variations by varying each bunsetsu's 2nd and 3rd candidates
+  for (let segIdx = 0; segIdx < data.length; segIdx++) {
+    const segCands = data[segIdx][1] || [];
+    for (let cIdx = 1; cIdx < Math.min(3, segCands.length); cIdx++) {
+      const variedPhrase = data
+        .map((seg, idx) => idx === segIdx ? segCands[cIdx] : ((seg[1] && seg[1][0]) ? seg[1][0] : seg[0]))
+        .join('');
+      addUnique(variedPhrase);
+    }
+  }
+
+  // Also include first clause's top candidates for partial conversion
+  if (Array.isArray(data[0][1])) {
+    data[0][1].slice(0, 4).forEach(addUnique);
+  }
+
+  return results;
+}
+
+function fetchGoogleCgiJsonp(hiraQuery, timeoutMs = 1800) {
+  return new Promise((resolve, reject) => {
+    const cbName = '_googleJaImeCb_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+    const script = document.createElement('script');
+    let settled = false;
+
+    const cleanup = () => {
+      if (script.parentNode) script.parentNode.removeChild(script);
+      try {
+        delete window[cbName];
+      } catch (_) {
+        window[cbName] = undefined;
+      }
+    };
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error('JSONP timeout'));
+    }, timeoutMs);
+
+    window[cbName] = (data) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      cleanup();
+      resolve(parseGoogleTransliterateBunsetsu(data));
+    };
+
+    script.onerror = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      cleanup();
+      reject(new Error('JSONP script error'));
+    };
+
+    script.src = `https://www.google.com/transliterate?langpair=ja-Hira|ja&text=${encodeURIComponent(hiraQuery)}&jsonp=${cbName}`;
+    document.head.appendChild(script);
+  });
+}
+
+async function fetchGoogleJapaneseCgiIme(hiraQuery) {
+  try {
+    const jsonpResults = await fetchGoogleCgiJsonp(hiraQuery, 1800);
+    if (jsonpResults && jsonpResults.length > 0) return jsonpResults;
+  } catch (_) {
+    // Fall through to fetch endpoints if JSONP is blocked
+  }
+
+  const targetUrl = `https://www.google.com/transliterate?langpair=ja-Hira|ja&text=${encodeURIComponent(hiraQuery)}`;
+  const endpoints = [
+    targetUrl,
+    `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
+  ];
+
+  for (const url of endpoints) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1800);
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        mode: 'cors',
+        credentials: 'omit',
+        signal: controller.signal
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const parsed = parseGoogleTransliterateBunsetsu(data);
+      if (parsed.length > 0) return parsed;
+    } catch (_) {
+      // Continue to next fallback
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  return [];
+}
+
+function buildLocalJapaneseSuggestions(hiraQuery, kataQuery) {
+  const results = [];
+  const addUnique = (val) => {
+    if (val && !results.includes(val)) results.push(val);
+  };
+
+  // 1. Direct match in curated + Kuromoji 160k-word reading index
+  lookupWordCandidatesForHira(hiraQuery).forEach(addUnique);
+
+  // 2. Offline cohesive phrase assembly (handles multi-word phrases & particles like わたしのなまえは -> 私の名前は)
+  const assembledPhrases = assembleOfflineKanjiPhrase(hiraQuery);
+  assembledPhrases.forEach(addUnique);
+
+  // 3. Stem + particle/ending assembly (e.g., がっこうへ -> 学校へ, たべます -> 食べます)
+  const endings = ['だけの', 'だけ', 'から', 'まで', 'です', 'ます', 'は', 'が', 'を', 'に', 'へ', 'で', 'と', 'の', 'も'];
+  for (const p of endings) {
+    if (hiraQuery.length > p.length && hiraQuery.endsWith(p)) {
+      const stem = hiraQuery.slice(0, -p.length);
+      const stemMatches = lookupWordCandidatesForHira(stem);
+      for (let i = 0; i < Math.min(3, stemMatches.length); i++) {
+        addUnique(stemMatches[i] + p);
+      }
+    }
+  }
+
+  // 4. Predictive prefix matches from LOCAL_JA_IME_DICT
+  if (hiraQuery.length >= 2) {
+    for (const [key, list] of Object.entries(LOCAL_JA_IME_DICT)) {
+      if (key.startsWith(hiraQuery) && key !== hiraQuery) {
+        addUnique(list[0]);
+        if (results.length >= 8) break;
+      }
+    }
+  }
+
+  // 5. Include Hiragana and Katakana forms at the end
+  addUnique(hiraQuery);
+  addUnique(kataQuery);
+
+  return results.slice(0, 10);
+}
+
 function extractActiveJapaneseQueryRange(text, explicitRange) {
   if (explicitRange) {
     const raw = explicitRange.rawRomajiOverride || text.slice(explicitRange.start, explicitRange.end);
@@ -1652,79 +2012,6 @@ function extractActiveJapaneseQueryRange(text, explicitRange) {
   const raw = match[1];
   const start = cursor - raw.length;
   return { start, end: cursor, raw };
-}
-
-async function fetchGoogleJapaneseTransliteration(hiraQuery) {
-  const endpoints = [
-    `https://inputtools.google.com/request?text=${encodeURIComponent(hiraQuery)}&itc=ja-t-ja-hira-i0-und&num=8&cp=0&cs=1&ie=utf-8&oe=utf-8&app=translate`,
-    `https://www.google.com/inputtools/request?text=${encodeURIComponent(hiraQuery)}&ime=transliteration_ja_Hira_ja&num=8&cp=0&cs=1&ie=utf-8&oe=utf-8&app=jsapi`
-  ];
-
-  for (const url of endpoints) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 1800);
-    try {
-      const res = await fetch(url, {
-        method: 'GET',
-        mode: 'cors',
-        credentials: 'omit',
-        signal: controller.signal
-      });
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (data && data[0] === 'SUCCESS' && data[1] && data[1][0] && Array.isArray(data[1][0][1])) {
-        return data[1][0][1];
-      }
-    } catch (_) {
-      // Fall back to local dictionary
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  return [];
-}
-
-function buildLocalJapaneseSuggestions(hiraQuery, kataQuery) {
-  const results = [];
-  const addUnique = (val) => {
-    if (val && !results.includes(val)) results.push(val);
-  };
-
-  if (LOCAL_JA_IME_DICT[hiraQuery]) {
-    LOCAL_JA_IME_DICT[hiraQuery].forEach(addUnique);
-  }
-
-  const endings = ['は', 'が', 'を', 'に', 'へ', 'で', 'と', 'の', 'も', 'から', 'まで', 'だけ', 'だけの', 'です', 'ます'];
-  for (const p of endings) {
-    if (hiraQuery.length > p.length && hiraQuery.endsWith(p)) {
-      const stem = hiraQuery.slice(0, -p.length);
-      if (LOCAL_JA_IME_DICT[stem]) {
-        addUnique(LOCAL_JA_IME_DICT[stem][0] + p);
-      } else if (stem === 'わたし' || stem === 'ぼく') {
-        addUnique((stem === 'わたし' ? '私' : '僕') + p);
-      }
-    }
-  }
-
-  for (const [kanji, info] of Object.entries(KANJI_FALLBACK)) {
-    if (info.kana === hiraQuery) {
-      addUnique(kanji);
-    }
-  }
-
-  if (hiraQuery.length >= 2) {
-    for (const [key, list] of Object.entries(LOCAL_JA_IME_DICT)) {
-      if (key.startsWith(hiraQuery) && key !== hiraQuery) {
-        addUnique(list[0]);
-        if (results.length >= 8) break;
-      }
-    }
-  }
-
-  addUnique(hiraQuery);
-  addUnique(kataQuery);
-
-  return results.slice(0, 10);
 }
 
 async function updateTypingSuggestions(text, explicitRange = null) {
@@ -1754,7 +2041,7 @@ async function updateTypingSuggestions(text, explicitRange = null) {
   showTypingSuggestions(localList, { start: activeRange.start, end: activeRange.end });
 
   if (/^[\u3041-\u3096ー]+$/.test(hiraQuery)) {
-    const remoteList = await fetchGoogleJapaneseTransliteration(hiraQuery);
+    const remoteList = await fetchGoogleJapaneseCgiIme(hiraQuery);
     if (reqId !== imeSuggestRequestId) return;
     if (remoteList.length > 0) {
       const merged = [];
