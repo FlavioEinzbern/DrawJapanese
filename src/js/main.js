@@ -1,4 +1,25 @@
 /* ==========================================================================
+   Force-Unlock Box 2 & Remove Placeholders Even If HTML Is Cached
+   ========================================================================== */
+function unlockBox2AndStripPlaceholders() {
+  textOutputBox.removeAttribute('placeholder');
+  romanizedOutputBox.removeAttribute('placeholder');
+  romanizedOutputBox.readOnly = false;
+  romanizedOutputBox.disabled = false;
+  romanizedOutputBox.removeAttribute('readonly');
+  romanizedOutputBox.removeAttribute('disabled');
+}
+
+unlockBox2AndStripPlaceholders();
+
+function syncBoxFocusState() {
+  const isBox1 = document.activeElement === textOutputBox;
+  const isBox2 = document.activeElement === romanizedOutputBox;
+  document.body.classList.toggle('box-focused', isBox1 || isBox2);
+  document.body.classList.toggle('box2-focused', isBox2);
+}
+
+/* ==========================================================================
    Visible Viewport Height Sync (Keeps UI Above Mobile Browser Toolbars)
    ========================================================================== */
 function syncViewportHeight() {
@@ -72,9 +93,14 @@ function autoResizeBoxes() {
   box1Wrapper.style.height = `${syncedHeight}px`;
   textOutputBox.style.height = `${syncedHeight}px`;
   furiganaBackdrop.style.height = `${syncedHeight}px`;
-  if (typeof romanizedBackdrop !== 'undefined' && romanizedBackdrop && romanizedBackdrop.parentElement) {
-    romanizedBackdrop.parentElement.style.height = `${syncedHeight}px`;
-    romanizedBackdrop.style.height = `${syncedHeight}px`;
+
+  const activeBox2Wrapper = document.getElementById('box2-wrapper');
+  const activeRomanizedBackdrop = document.getElementById('romanized-backdrop');
+  if (activeBox2Wrapper) {
+    activeBox2Wrapper.style.height = `${syncedHeight}px`;
+  }
+  if (activeRomanizedBackdrop) {
+    activeRomanizedBackdrop.style.height = `${syncedHeight}px`;
   }
   romanizedOutputBox.style.height = `${syncedHeight}px`;
 }
@@ -139,7 +165,7 @@ function initCanvasFullscreenToggle() {
 }
 
 /* ==========================================================================
-   Canvas & Input Event Listeners
+   Canvas & Bidirectional Box Input Event Listeners
    ========================================================================== */
 canvas.addEventListener('mousedown', startDrawing);
 canvas.addEventListener('mousemove', draw);
@@ -149,8 +175,29 @@ canvas.addEventListener('touchstart', startDrawing, { passive: false });
 canvas.addEventListener('touchmove', draw, { passive: false });
 window.addEventListener('touchend', stopDrawing, { passive: false });
 
+textOutputBox.addEventListener('focus', () => {
+  syncBoxFocusState();
+  if (currentLang === 'ja' && typeof updateTypingSuggestions === 'function') {
+    updateTypingSuggestions(textOutputBox.value);
+  }
+});
+textOutputBox.addEventListener('blur', syncBoxFocusState);
 textOutputBox.addEventListener('input', () => {
-  updateRomanization();
+  updateRomanization(true, true);
+});
+
+romanizedOutputBox.addEventListener('focus', () => {
+  unlockBox2AndStripPlaceholders();
+  syncBoxFocusState();
+});
+romanizedOutputBox.addEventListener('blur', () => {
+  syncBoxFocusState();
+  updateRomanization(false, true);
+});
+romanizedOutputBox.addEventListener('input', () => {
+  if (typeof handleBox2Input === 'function') {
+    handleBox2Input();
+  }
 });
 
 /* ==========================================================================
@@ -190,7 +237,7 @@ tabs.forEach(tab => {
     }
 
     clearCanvas();
-    updateRomanization();
+    updateRomanization(false, true);
   });
 });
 
@@ -209,7 +256,7 @@ document.getElementById('btn-backspace').addEventListener('click', () => {
   if (originalText.length > 0) {
     textOutputBox.value = originalText.slice(0, -1);
     textOutputBox.blur();
-    updateRomanization();
+    updateRomanization(true, true);
   }
 });
 
@@ -217,10 +264,15 @@ document.getElementById('btn-clear-text').addEventListener('click', () => {
   textOutputBox.value = '';
   furiganaBackdrop.innerHTML = '';
   romanizedOutputBox.value = '';
-  if (typeof romanizedBackdrop !== 'undefined' && romanizedBackdrop) {
-    romanizedBackdrop.innerHTML = '';
+  const activeRomanizedBackdrop = document.getElementById('romanized-backdrop');
+  if (activeRomanizedBackdrop) {
+    activeRomanizedBackdrop.innerHTML = '';
+  }
+  if (typeof clearAlignedSegmentsAndSuggestions === 'function') {
+    clearAlignedSegmentsAndSuggestions();
   }
   textOutputBox.blur();
+  romanizedOutputBox.blur();
   charCount.textContent = '0 chars';
   autoResizeBoxes();
 });
@@ -277,6 +329,7 @@ if (window.visualViewport) {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  unlockBox2AndStripPlaceholders();
   syncViewportHeight();
   initThemeToggle();
   initCanvasFullscreenToggle();
@@ -285,6 +338,7 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 window.addEventListener('load', () => {
+  unlockBox2AndStripPlaceholders();
   syncViewportHeight();
   initOfflineRecognizers();
 });
