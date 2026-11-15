@@ -1,1 +1,1 @@
-https://flavioeinzbern.github.io/DrawJapanese/index.html
+https://flavioeinzbern.github.io/DrawJapanese
