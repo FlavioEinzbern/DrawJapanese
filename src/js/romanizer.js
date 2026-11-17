@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Language Engine & Romanization Handlers (Kuroshiro + Kuromoji + pinyin-pro)
+   Language Engine & Romanization Handlers (Kuroshiro + Kuromoji + Jotoba)
    ========================================================================== */
 let kuroshiroInstance = null;
 let kuroshiroAnalyzer = null;
@@ -15,6 +15,15 @@ let isKuromojiIndexBuilt = false;
 const ZH_PINYIN_TONELESS_INDEX = new Map();
 const ZH_PINYIN_TONED_INDEX = new Map();
 let isZhPinyinIndexBuilt = false;
+
+/* Jotoba Dictionary & Cross-Box Highlight State */
+const JOTOBA_WORD_CACHE = new Map();
+const JOTOBA_KANJI_CACHE = new Map();
+let isInspectModeActive = false;
+let activeHoveredSegIdx = null;
+let dictHoverHideTimer = null;
+let dictLookupRequestId = 0;
+let isDictAndHighlightInitialized = false;
 
 function katakanaToHiragana(str) {
   return str.replace(/[\u30A1-\u30F6]/g, (ch) =>
@@ -99,7 +108,12 @@ async function fetchKanjiApiData(char) {
       romaji: kanaToRomajiString(primaryKana),
       onKana: onList[0] || primaryKana,
       onRomaji: kanaToRomajiString(onList[0] || primaryKana),
-      okuriRules
+      okuriRules,
+      meanings: data.meanings || [],
+      jlpt: data.jlpt || null,
+      grade: data.grade || null,
+      onReadingsRaw: data.on_readings || [],
+      kunReadingsRaw: data.kun_readings || []
     };
 
     KANJI_API_CACHE[char] = entry;
@@ -242,10 +256,6 @@ function buildKuromojiReadingIndex(analyzer) {
   processChunk();
 }
 
-/*
- * Build a non-blocking Chinese Pinyin (Toneless & Toned) -> Ranked Hanzi index
- * in memory using pinyin-pro so all tones (ˉ ˊ ˇ ˋ and neutral) work offline.
- */
 const HIGH_FREQ_HANZI_SEED =
   '的一是在不了有和人这中大为上个国我以要他时来用们生到作地于出就分对成会可主发年动同工也能下过子说产种面而方后多定行学法所民得经十三之进着等部度家电力里如水化高自二理起小物现实加量都两体制机当使点从业本去把性好应开它合还因由其些然前外天政四日那社义事平形相全表间样与关各重新线内数正心反你明看原又么利比或但质气第向道命此变条只没结解问意建月公无系军很情者最立代想已通并提直题党程展五果料象员革位入常文总次品式活设及管特件长求老头基资边流路级少图山统接知较将组见计别她手角期根论运农指几九区强放决西被干做必战先回则任取据处队南给色光门即保治北造百规热领七海口东导器压志世金增争济阶油思术极交受联什认六共权收证改清己美再采转更单风切打白教速花带安场身车例真务具万每目至达走积示议声报斗完类八离华名确才科张信马节话米整空元况今集温传土许步群广石记需段研界拉林律叫且究观越织装影算低持音众书布复容儿须际商非验连断深难近矿千周委素技备半办青省列习响约支般史感劳便团往酸历市克何除消构太准精值号率族维划选标写存候毛亲快效斯院查江型眼王按格养易置派层片始却专状育厂京识适属圆包火住调满县局照参红细引听该铁价严首底液官德随病苏失尔死讲配女黄推显谈罪神艺呢吗妈麻骂码爸吧把八百北不吃茶车城出穿船床吹春词次从错打大但当到道得等点电店东懂动都读短对多饿儿二发饭方房放飞非分风服附父刚高哥歌个给跟更工公共狗古故刮关观光广贵国果过还海孩汉好号喝和河贺黑很红后候湖虎花画化话欢还换黄回会活火机鸡级极急几己记既家假价间见件健江讲交角脚叫觉姐解借今斤金进近京经景静九酒就旧局举句具剧决绝军开看康考棵科咳可渴克刻客空孔口哭苦库裤块快宽况矿困拉啦来蓝篮兰拦烂郎朗浪捞劳老乐雷累冷离梨礼李里理力历立丽利例连联脸练凉两亮谅辆聊林零领流留六龙楼路旅绿乱妈麻马骂吗慢忙毛冒么没眉梅美妹门闷们梦米迷秘蜜眠民敏名明鸣命摸模膜摩磨蘑魔抹末莫墨默谋某母亩木目牧拿哪那内男南难囊呢内嫩能你泥年中飯';
 
@@ -281,12 +291,10 @@ function buildChinesePinyinIndex() {
   if (isZhPinyinIndexBuilt || typeof pinyinPro === 'undefined' || !pinyinPro.pinyin) return;
   isZhPinyinIndexBuilt = true;
 
-  // 1. Immediate seed of high-frequency Chinese characters across all tones
   for (const ch of HIGH_FREQ_HANZI_SEED) {
     if (KANJI_REGEX.test(ch)) addHanziToPinyinIndex(ch);
   }
 
-  // 2. Background chunked scan of common CJK block (0x4E00..0x9FA5)
   let code = 0x4E00;
   const END_CODE = 0x9FA5;
   const CHUNK = 450;
@@ -463,37 +471,29 @@ async function convertTokensWithKuroshiro(tokens, options) {
   return await kuroshiroInstance.convert(segmentStr, options);
 }
 
+/*
+ * Build Furigana HTML with per-token <span class="box1-token" data-seg-idx="..."> wrappers
+ * so mouse-over, mobile Inspect Mode taps, and cross-box selection highlights map 1:1.
+ */
 async function buildFuriganaHtmlFromTokens(tokens) {
   let html = '';
-  let buffer = [];
 
-  const flushBuffer = async () => {
-    if (buffer.length === 0) return;
-    const safeBuffer = buffer.map(tok => ({
-      ...tok,
-      surface_form: escapeHtml(tok.surface_form || '')
-    }));
-    buffer = [];
-    html += await convertTokensWithKuroshiro(safeBuffer, {
-      to: 'hiragana',
-      mode: 'furigana'
-    });
-  };
+  for (let idx = 0; idx < tokens.length; idx++) {
+    const tok = tokens[idx];
+    const surf = tok.surface_form || '';
+    if (!surf) continue;
 
-  for (const tok of tokens) {
+    let innerHtml = '';
     if (tok._isParticleWa) {
-      await flushBuffer();
-      html += '<ruby>は<rt>わ</rt></ruby>';
+      innerHtml = '<ruby>は<rt>わ</rt></ruby>';
     } else if (tok._isParticleE) {
-      await flushBuffer();
-      html += '<ruby>へ<rt>え</rt></ruby>';
+      innerHtml = '<ruby>へ<rt>え</rt></ruby>';
     } else if (tok._hasTrailingWa) {
-      await flushBuffer();
-      const prefixSurf = tok.surface_form.slice(0, -1);
+      const prefixSurf = surf.slice(0, -1);
       const prefixRead = (tok.reading || '').slice(0, -1);
       const prefixPron = (tok.pronunciation || '').slice(0, -1);
       if (KANJI_REGEX.test(prefixSurf)) {
-        html += await convertTokensWithKuroshiro([{
+        innerHtml = await convertTokensWithKuroshiro([{
           ...tok,
           surface_form: escapeHtml(prefixSurf),
           reading: prefixRead,
@@ -503,15 +503,31 @@ async function buildFuriganaHtmlFromTokens(tokens) {
           mode: 'furigana'
         });
       } else {
-        html += escapeHtml(prefixSurf);
+        innerHtml = escapeHtml(prefixSurf);
       }
-      html += '<ruby>は<rt>わ</rt></ruby>';
+      innerHtml += '<ruby>は<rt>わ</rt></ruby>';
+    } else if (KANJI_REGEX.test(surf)) {
+      innerHtml = await convertTokensWithKuroshiro([{
+        ...tok,
+        surface_form: escapeHtml(surf)
+      }], {
+        to: 'hiragana',
+        mode: 'furigana'
+      });
     } else {
-      buffer.push(tok);
+      innerHtml = escapeHtml(surf);
+    }
+
+    if (/^\s+$/.test(surf)) {
+      html += innerHtml;
+    } else {
+      const basic = (tok.basic_form && tok.basic_form !== '*') ? tok.basic_form : surf;
+      const readHira = katakanaToHiragana(tok.reading || surf);
+      const pos = tok.pos || '';
+      html += `<span class="box1-token" data-seg-idx="${idx}" data-surface="${escapeHtml(surf)}" data-basic="${escapeHtml(basic)}" data-reading="${escapeHtml(readHira)}" data-pos="${escapeHtml(pos)}">${innerHtml}</span>`;
     }
   }
 
-  await flushBuffer();
   return html;
 }
 
@@ -537,60 +553,162 @@ async function renderBox1FuriganaOnly(text) {
 
 async function buildJapaneseAlignedSegments(tokens) {
   const segs = [];
-  for (const tok of tokens) {
+  let charCursor = 0;
+
+  for (let idx = 0; idx < tokens.length; idx++) {
+    const tok = tokens[idx];
     const src = tok.surface_form || '';
     if (!src) continue;
+
+    const start = charCursor;
+    const end = charCursor + src.length;
+    charCursor = end;
+
+    if (/^\s+$/.test(src)) {
+      segs.push({ idx, src, rom: '', romHtml: '', start, end });
+      continue;
+    }
+
     const rawRom = await convertTokensWithKuroshiro([tok], {
       to: 'romaji',
       mode: 'spaced',
       romajiSystem: 'hepburn'
     });
-    const rom = postProcessJapaneseRomajiNumbers(rawRom).plain.trim();
-    segs.push({ src, rom });
+    const processed = postProcessJapaneseRomajiNumbers(rawRom);
+    segs.push({
+      idx,
+      src,
+      rom: processed.plain.trim(),
+      romHtml: processed.html.trim(),
+      start,
+      end,
+      basic: (tok.basic_form && tok.basic_form !== '*') ? tok.basic_form : src,
+      reading: katakanaToHiragana(tok.reading || src),
+      pos: tok.pos || ''
+    });
   }
   return segs;
 }
 
 function buildFallbackJapaneseAlignedSegments(text) {
   const segs = [];
+  let charCursor = 0;
+  let idx = 0;
   for (const ch of text) {
+    const start = charCursor;
+    const end = charCursor + ch.length;
+    charCursor = end;
     if (/\s/.test(ch)) {
-      segs.push({ src: ch, rom: '' });
+      segs.push({ idx, src: ch, rom: '', romHtml: '', start, end });
     } else {
-      const rom = fallbackJapaneseRomanizeWithBlueNumbers(ch).plain.trim();
-      segs.push({ src: ch, rom });
+      const processed = fallbackJapaneseRomanizeWithBlueNumbers(ch);
+      segs.push({
+        idx,
+        src: ch,
+        rom: processed.plain.trim(),
+        romHtml: processed.html.trim(),
+        start,
+        end,
+        basic: ch,
+        reading: katakanaToHiragana(ch),
+        pos: ''
+      });
+    }
+    idx++;
+  }
+  return segs;
+}
+
+function buildNonJapaneseAlignedSegments(text, lang) {
+  const segs = [];
+  let charCursor = 0;
+  let idx = 0;
+
+  if (lang === 'zh') {
+    let i = 0;
+    while (i < text.length) {
+      const ch = text[i];
+      if (/\s/.test(ch)) {
+        segs.push({ idx: idx++, src: ch, rom: '', romHtml: '', start: i, end: i + 1 });
+        i++;
+        continue;
+      }
+      const numMatch = text.slice(i).match(/^([0-9０-９]+|[零〇一二两三四五六七八九十百千万億亿]+)/);
+      if (numMatch) {
+        const token = numMatch[0];
+        const rom = romanizeNumberByLang(token, 'zh').trim();
+        segs.push({
+          idx: idx++,
+          src: token,
+          rom,
+          romHtml: `<span class="romanized-number">${escapeHtml(rom)}</span>`,
+          start: i,
+          end: i + token.length
+        });
+        i += token.length;
+        continue;
+      }
+      const rom = romanizeChinese(ch).trim();
+      segs.push({
+        idx: idx++,
+        src: ch,
+        rom,
+        romHtml: escapeHtml(rom),
+        start: i,
+        end: i + 1
+      });
+      i++;
+    }
+    return segs;
+  }
+
+  // Korean & Russian: split by whitespace and number tokens while tracking exact character offsets
+  const tokens = text.split(/(\s+|[0-9０-９]+|[零〇一二两三四五六七八九十百千万億亿]+)/g).filter(Boolean);
+  for (const tok of tokens) {
+    const start = charCursor;
+    const end = charCursor + tok.length;
+    charCursor = end;
+
+    if (/^\s+$/.test(tok)) {
+      segs.push({ idx: idx++, src: tok, rom: '', romHtml: '', start, end });
+    } else if (IS_NUMBER_TOKEN_REGEX.test(tok)) {
+      const rom = romanizeNumberByLang(tok, lang).trim();
+      segs.push({
+        idx: idx++,
+        src: tok,
+        rom,
+        romHtml: `<span class="romanized-number">${escapeHtml(rom)}</span>`,
+        start,
+        end
+      });
+    } else {
+      const rom = (lang === 'ru' ? romanizeRussian(tok) : romanizeKorean(tok)).trim();
+      segs.push({
+        idx: idx++,
+        src: tok,
+        rom,
+        romHtml: escapeHtml(rom),
+        start,
+        end
+      });
     }
   }
   return segs;
 }
 
-function buildChineseAlignedSegments(text) {
-  const segs = [];
-  let i = 0;
-  while (i < text.length) {
-    const ch = text[i];
-    if (/\s/.test(ch)) {
-      segs.push({ src: ch, rom: '' });
-      i++;
-      continue;
-    }
-    const numMatch = text.slice(i).match(/^([0-9０-９]+|[零〇一二两三四五六七八九十百千万億亿]+)/);
-    if (numMatch) {
-      const token = numMatch[0];
-      segs.push({ src: token, rom: romanizeNumberByLang(token, 'zh').trim() });
-      i += token.length;
-      continue;
-    }
-    const rom = romanizeChinese(ch).trim();
-    segs.push({ src: ch, rom });
-    i++;
-  }
-  return segs;
+function buildBox2SegmentedStrings(segments) {
+  const nonEmpty = segments.filter(s => s && s.rom);
+  const plain = nonEmpty.map(s => s.rom).join(' ');
+  const html = nonEmpty
+    .map(s => `<span class="box2-seg" data-seg-idx="${s.idx}">${s.romHtml || escapeHtml(s.rom)}</span>`)
+    .join(' ');
+  return { plain, html };
 }
 
 async function initKuroshiro() {
   ensureGzippedDictLoader();
   getBox2Backdrop();
+  initDictionaryAndCrossBoxHighlight();
   buildChinesePinyinIndex();
 
   const KuroshiroClass = typeof Kuroshiro !== 'undefined' ? (Kuroshiro.default || Kuroshiro) : null;
@@ -656,10 +774,11 @@ function setEngineStatus(type, msg) {
 }
 
 function escapeHtml(str) {
-  return str
+  return String(str || '')
     .replace(/&/g, '&')
     .replace(/</g, '<')
-    .replace(/>/g, '>');
+    .replace(/>/g, '>')
+    .replace(/"/g, '"');
 }
 
 /* ==========================================================================
@@ -993,35 +1112,24 @@ function canUseFallbackCompoundAt(str, i, sub) {
 function fallbackJapaneseFuriganaHtml(str) {
   let html = '';
   let i = 0;
+  let segIdx = 0;
   while (i < str.length) {
-    const digitMatch = str.slice(i).match(/^[0-9０-９]+/);
-    if (digitMatch) {
-      html += escapeHtml(digitMatch[0]);
-      i += digitMatch[0].length;
+    const ch = str[i];
+    if (/\s/.test(ch)) {
+      html += escapeHtml(ch);
+      i++;
+      segIdx++;
       continue;
     }
-
-    let compoundFound = false;
-    for (let len = 4; len >= 2; len--) {
-      const sub = str.substr(i, len);
-      if (KANJI_FALLBACK[sub] && canUseFallbackCompoundAt(str, i, sub)) {
-        html += `<ruby>${escapeHtml(sub)}<rt>${KANJI_FALLBACK[sub].kana}</rt></ruby>`;
-        i += len;
-        compoundFound = true;
-        break;
-      }
-    }
-    if (compoundFound) continue;
 
     const kanjiMatch = resolveFallbackKanjiAt(str, i);
-    if (kanjiMatch && kanjiMatch.kana) {
-      html += `<ruby>${escapeHtml(str[i])}<rt>${kanjiMatch.kana}</rt></ruby>`;
-      i++;
-      continue;
-    }
+    const inner = (kanjiMatch && kanjiMatch.kana)
+      ? `<ruby>${escapeHtml(ch)}<rt>${kanjiMatch.kana}</rt></ruby>`
+      : escapeHtml(ch);
 
-    html += escapeHtml(str[i]);
+    html += `<span class="box1-token" data-seg-idx="${segIdx}" data-surface="${escapeHtml(ch)}" data-basic="${escapeHtml(ch)}" data-reading="${escapeHtml(kanjiMatch ? kanjiMatch.kana : ch)}" data-pos="">${inner}</span>`;
     i++;
+    segIdx++;
   }
   return html.endsWith('\n') ? html + '\u200b' : html;
 }
@@ -1322,6 +1430,512 @@ async function romanizeNonJapaneseTextAndNumbers(text, lang) {
 }
 
 /* ==========================================================================
+   Jotoba Dictionary Popover (Mouse-Over + Mobile Option C) & Cross-Box Sync
+   ========================================================================== */
+function ensureDictInspectBar() {
+  let bar = document.getElementById('dict-inspect-bar');
+  if (!bar && box1Wrapper && box1Wrapper.parentNode) {
+    bar = document.createElement('div');
+    bar.id = 'dict-inspect-bar';
+    bar.innerHTML = `
+      <button id="btn-inspect-dict" type="button" title="Toggle Japanese Dictionary Inspect Mode">
+        <span>📖</span>
+        <span id="btn-inspect-dict-label">Dictionary: OFF</span>
+      </button>
+      <span id="dict-inspect-hint">Hover words (Desktop) or turn ON to tap words</span>
+    `;
+    box1Wrapper.parentNode.insertBefore(bar, box1Wrapper);
+
+    const btn = bar.querySelector('#btn-inspect-dict');
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setInspectMode(!isInspectModeActive);
+    });
+  }
+
+  if (bar) {
+    if (currentLang === 'ja') {
+      bar.classList.remove('hidden');
+    } else {
+      bar.classList.add('hidden');
+      if (isInspectModeActive) setInspectMode(false);
+    }
+  }
+}
+
+function setInspectMode(enabled) {
+  isInspectModeActive = Boolean(enabled && currentLang === 'ja');
+  document.body.classList.toggle('inspect-mode-active', isInspectModeActive);
+
+  const btn = document.getElementById('btn-inspect-dict');
+  const label = document.getElementById('btn-inspect-dict-label');
+  const hint = document.getElementById('dict-inspect-hint');
+
+  if (btn && label && hint) {
+    btn.classList.toggle('inspect-active', isInspectModeActive);
+    label.textContent = isInspectModeActive ? 'Dictionary: ON' : 'Dictionary: OFF';
+    hint.textContent = isInspectModeActive
+      ? 'Tap any Japanese word below to see its meaning'
+      : 'Hover words (Desktop) or turn ON to tap words';
+  }
+
+  if (isInspectModeActive) {
+    textOutputBox.blur();
+    romanizedOutputBox.blur();
+  } else {
+    hideDictionaryPopover();
+    syncBox1SelectionToBox2();
+  }
+}
+
+function ensureDictionaryPopoverElement() {
+  let pop = document.getElementById('jotoba-dict-popover');
+  if (pop) return pop;
+
+  pop = document.createElement('div');
+  pop.id = 'jotoba-dict-popover';
+  pop.className = 'hidden';
+
+  pop.addEventListener('mouseenter', () => {
+    clearTimeout(dictHoverHideTimer);
+  });
+  pop.addEventListener('mouseleave', () => {
+    if (!isInspectModeActive) {
+      scheduleHideDictionaryPopover(180);
+    }
+  });
+  pop.addEventListener('mousedown', (e) => e.stopPropagation());
+  pop.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+
+  document.body.appendChild(pop);
+  return pop;
+}
+
+function hideDictionaryPopover() {
+  clearTimeout(dictHoverHideTimer);
+  activeHoveredSegIdx = null;
+  const pop = document.getElementById('jotoba-dict-popover');
+  if (pop) {
+    pop.classList.add('hidden');
+  }
+  syncBox1SelectionToBox2();
+}
+
+function scheduleHideDictionaryPopover(delayMs = 180) {
+  clearTimeout(dictHoverHideTimer);
+  dictHoverHideTimer = setTimeout(() => {
+    hideDictionaryPopover();
+  }, delayMs);
+}
+
+/* Highlight matching segment indices in both Box 1 and Box 2 */
+function applySegmentHighlights(segIndicesSet) {
+  const box1Tokens = furiganaBackdrop.querySelectorAll('.box1-token');
+  box1Tokens.forEach((el) => {
+    const idx = Number(el.getAttribute('data-seg-idx'));
+    el.classList.toggle('cross-highlight', segIndicesSet.has(idx));
+  });
+
+  const backdrop = getBox2Backdrop();
+  if (!backdrop) return;
+
+  let firstHighlightedEl = null;
+  const box2Segs = backdrop.querySelectorAll('.box2-seg');
+  box2Segs.forEach((el) => {
+    const idx = Number(el.getAttribute('data-seg-idx'));
+    const isMatch = segIndicesSet.has(idx);
+    el.classList.toggle('cross-highlight', isMatch);
+    if (isMatch && !firstHighlightedEl) {
+      firstHighlightedEl = el;
+    }
+  });
+
+  if (firstHighlightedEl && backdrop.scrollWidth > backdrop.clientWidth) {
+    const targetLeft = Math.max(0, firstHighlightedEl.offsetLeft - backdrop.clientWidth * 0.25);
+    backdrop.scrollTo({ left: targetLeft, behavior: 'smooth' });
+  }
+}
+
+/* Synchronize Box 1 text selection (or active dictionary token) to Box 2 */
+function syncBox1SelectionToBox2() {
+  const highlighted = new Set();
+
+  if (activeHoveredSegIdx !== null) {
+    highlighted.add(Number(activeHoveredSegIdx));
+  }
+
+  if (document.activeElement === textOutputBox) {
+    const selStart = textOutputBox.selectionStart ?? 0;
+    const selEnd = textOutputBox.selectionEnd ?? 0;
+    if (selEnd > selStart) {
+      for (const seg of alignedSegments) {
+        if (seg && seg.rom && seg.start < selEnd && seg.end > selStart) {
+          highlighted.add(seg.idx);
+        }
+      }
+    }
+  }
+
+  applySegmentHighlights(highlighted);
+}
+
+async function postJotobaEndpoint(path, queryStr, timeoutMs = 2800) {
+  const targetUrl = `https://jotoba.de/api/search/${path}`;
+  const bodyPayload = JSON.stringify({
+    query: queryStr,
+    language: 'English',
+    no_english: false
+  });
+
+  const urls = [
+    targetUrl,
+    `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
+  ];
+
+  for (const url of urls) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        mode: 'cors',
+        credentials: 'omit',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: bodyPayload,
+        signal: controller.signal
+      });
+      if (!res.ok) continue;
+      return await res.json();
+    } catch (_) {
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return null;
+}
+
+function formatJotobaPosTag(posItem) {
+  if (!posItem) return '';
+  if (typeof posItem === 'string') return posItem;
+  if (typeof posItem === 'object') {
+    const keys = Object.keys(posItem);
+    if (keys.length > 0) return keys[0];
+  }
+  return '';
+}
+
+async function fetchJotobaDictionaryData(surface, basicForm, readingHira) {
+  const lookupKey = (basicForm && basicForm !== '*') ? basicForm : surface;
+  const cacheKey = `${surface}|${lookupKey}`;
+  if (JOTOBA_WORD_CACHE.has(cacheKey)) {
+    return JOTOBA_WORD_CACHE.get(cacheKey);
+  }
+
+  const wordData = await postJotobaEndpoint('words', lookupKey);
+  let words = (wordData && Array.isArray(wordData.words)) ? wordData.words : [];
+
+  if (words.length === 0 && lookupKey !== surface) {
+    const fallbackWordData = await postJotobaEndpoint('words', surface);
+    if (fallbackWordData && Array.isArray(fallbackWordData.words)) {
+      words = fallbackWordData.words;
+    }
+  }
+
+  // Extract individual Kanji characters in the token for Kanji breakdown
+  const kanjiChars = [...new Set([...surface].filter(ch => KANJI_REGEX.test(ch)))];
+  let kanjiDetails = [];
+
+  if (kanjiChars.length > 0) {
+    const jotobaKanjiList = (wordData && Array.isArray(wordData.kanji)) ? wordData.kanji : [];
+    for (const kChar of kanjiChars) {
+      if (JOTOBA_KANJI_CACHE.has(kChar)) {
+        kanjiDetails.push(JOTOBA_KANJI_CACHE.get(kChar));
+        continue;
+      }
+
+      let foundK = jotobaKanjiList.find(k => k && k.literal === kChar);
+      if (!foundK) {
+        const kRes = await postJotobaEndpoint('kanji', kChar, 2000);
+        if (kRes && Array.isArray(kRes.kanji)) {
+          foundK = kRes.kanji.find(k => k && k.literal === kChar) || kRes.kanji[0];
+        }
+      }
+
+      if (foundK && foundK.meanings) {
+        const kEntry = {
+          literal: kChar,
+          meanings: foundK.meanings.slice(0, 4),
+          onyomi: (foundK.onyomi || []).slice(0, 3),
+          kunyomi: (foundK.kunyomi || []).slice(0, 3),
+          jlpt: foundK.jlpt || null,
+          grade: foundK.grade || null
+        };
+        JOTOBA_KANJI_CACHE.set(kChar, kEntry);
+        kanjiDetails.push(kEntry);
+      } else {
+        const apiK = await fetchKanjiApiData(kChar);
+        if (apiK) {
+          const kEntry = {
+            literal: kChar,
+            meanings: (apiK.meanings || []).slice(0, 4),
+            onyomi: (apiK.onReadingsRaw || []).slice(0, 3),
+            kunyomi: (apiK.kunReadingsRaw || []).slice(0, 3),
+            jlpt: apiK.jlpt,
+            grade: apiK.grade
+          };
+          JOTOBA_KANJI_CACHE.set(kChar, kEntry);
+          kanjiDetails.push(kEntry);
+        }
+      }
+    }
+  }
+
+  const result = {
+    surface,
+    basicForm: lookupKey,
+    readingHira,
+    words: words.slice(0, 3),
+    kanjiDetails
+  };
+
+  JOTOBA_WORD_CACHE.set(cacheKey, result);
+  return result;
+}
+
+function positionDictionaryPopover(anchorRect) {
+  const pop = ensureDictionaryPopoverElement();
+  const margin = 8;
+  const popRect = pop.getBoundingClientRect();
+  const popW = popRect.width || 320;
+  const popH = popRect.height || 220;
+
+  let left = anchorRect.left + (anchorRect.width / 2) - (popW / 2);
+  left = Math.max(margin, Math.min(left, window.innerWidth - popW - margin));
+
+  const spaceAbove = anchorRect.top;
+  const spaceBelow = window.innerHeight - anchorRect.bottom;
+
+  let top;
+  if (spaceAbove >= popH + 12 || spaceAbove >= spaceBelow) {
+    top = Math.max(margin, anchorRect.top - popH - 8);
+  } else {
+    top = Math.min(window.innerHeight - popH - margin, anchorRect.bottom + 8);
+  }
+
+  pop.style.left = `${Math.round(left)}px`;
+  pop.style.top = `${Math.round(top)}px`;
+}
+
+async function triggerTokenDictionaryLookup(tokenEl) {
+  if (!tokenEl || currentLang !== 'ja') return;
+
+  const segIdx = Number(tokenEl.getAttribute('data-seg-idx'));
+  const surface = tokenEl.getAttribute('data-surface') || tokenEl.textContent || '';
+  const basic = tokenEl.getAttribute('data-basic') || surface;
+  const reading = tokenEl.getAttribute('data-reading') || surface;
+  const pos = tokenEl.getAttribute('data-pos') || '';
+
+  if (!surface.trim()) return;
+
+  clearTimeout(dictHoverHideTimer);
+  activeHoveredSegIdx = segIdx;
+  syncBox1SelectionToBox2();
+
+  const reqId = ++dictLookupRequestId;
+  const pop = ensureDictionaryPopoverElement();
+  const romaji = kanaToRomajiString(katakanaToHiragana(reading));
+  const anchorRect = tokenEl.getBoundingClientRect();
+
+  pop.innerHTML = `
+    <div class="dict-popover-header">
+      <div>
+        <div>
+          <span class="dict-headword">${escapeHtml(surface)}</span>
+          <span class="dict-reading">${escapeHtml(reading)}</span>
+        </div>
+        <div class="dict-romaji">${escapeHtml(romaji)}${basic !== surface ? ` • Root: <strong>${escapeHtml(basic)}</strong>` : ''}</div>
+      </div>
+      <button type="button" class="dict-close-btn" aria-label="Close dictionary">✕</button>
+    </div>
+    <div class="text-xs text-slate-400 animate-pulse py-1">Searching Jotoba dictionary...</div>
+  `;
+  pop.querySelector('.dict-close-btn').addEventListener('click', hideDictionaryPopover);
+  pop.classList.remove('hidden');
+  positionDictionaryPopover(anchorRect);
+
+  const data = await fetchJotobaDictionaryData(surface, basic, reading);
+  if (reqId !== dictLookupRequestId) return;
+
+  const topWord = data.words && data.words[0] ? data.words[0] : null;
+  const displayHead = topWord && topWord.reading
+    ? (topWord.reading.kanji || topWord.reading.kana || surface)
+    : surface;
+  const displayKana = topWord && topWord.reading
+    ? (topWord.reading.kana || reading)
+    : reading;
+  const displayRomaji = kanaToRomajiString(katakanaToHiragana(displayKana));
+
+  let badgesHtml = '';
+  if (basic && basic !== surface) {
+    badgesHtml += `<span class="dict-badge">Root: ${escapeHtml(basic)}</span>`;
+  }
+  if (topWord && topWord.common) {
+    badgesHtml += `<span class="dict-badge">Common</span>`;
+  }
+  if (pos) {
+    badgesHtml += `<span class="dict-badge">${escapeHtml(pos)}</span>`;
+  }
+
+  let sensesHtml = '';
+  if (topWord && Array.isArray(topWord.senses) && topWord.senses.length > 0) {
+    const items = topWord.senses.slice(0, 4).map((sense) => {
+      const glosses = Array.isArray(sense.glosses) ? sense.glosses.join(', ') : '';
+      const posList = Array.isArray(sense.pos)
+        ? sense.pos.map(formatJotobaPosTag).filter(Boolean).slice(0, 2).join(', ')
+        : '';
+      return `<li class="dict-sense-item">${posList ? `<span class="opacity-70 text-[11px]">(${escapeHtml(posList)})</span> ` : ''}${escapeHtml(glosses)}</li>`;
+    }).join('');
+    sensesHtml = `<ol class="dict-senses-list">${items}</ol>`;
+  } else {
+    sensesHtml = `<div class="text-xs opacity-75 py-0.5">No exact word entry found in Jotoba.</div>`;
+  }
+
+  let kanjiHtml = '';
+  if (data.kanjiDetails && data.kanjiDetails.length > 0) {
+    const cards = data.kanjiDetails.map((k) => {
+      const meanings = (k.meanings || []).join(', ');
+      const readings = [...(k.onyomi || []), ...(k.kunyomi || [])].slice(0, 4).join(' · ');
+      const meta = [k.jlpt ? `JLPT N${k.jlpt}` : '', k.grade ? `G${k.grade}` : ''].filter(Boolean).join(' ');
+      return `
+        <div class="dict-kanji-card">
+          <span class="dict-kanji-literal">${escapeHtml(k.literal)}</span>
+          <div class="text-[11px] leading-snug">
+            <div class="font-medium">${escapeHtml(meanings || 'Kanji')} ${meta ? `<span class="opacity-60">(${escapeHtml(meta)})</span>` : ''}</div>
+            ${readings ? `<div class="opacity-75">${escapeHtml(readings)}</div>` : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+    kanjiHtml = `<div class="dict-kanji-section">${cards}</div>`;
+  }
+
+  pop.innerHTML = `
+    <div class="dict-popover-header">
+      <div>
+        <div>
+          <span class="dict-headword">${escapeHtml(displayHead)}</span>
+          <span class="dict-reading">${escapeHtml(displayKana)}</span>
+        </div>
+        <div class="dict-romaji">${escapeHtml(displayRomaji)}</div>
+        ${badgesHtml ? `<div>${badgesHtml}</div>` : ''}
+      </div>
+      <button type="button" class="dict-close-btn" aria-label="Close dictionary">✕</button>
+    </div>
+    ${sensesHtml}
+    ${kanjiHtml}
+  `;
+  pop.querySelector('.dict-close-btn').addEventListener('click', hideDictionaryPopover);
+  positionDictionaryPopover(tokenEl.getBoundingClientRect());
+}
+
+function findBox1TokenAtPoint(clientX, clientY) {
+  const tokens = furiganaBackdrop.querySelectorAll('.box1-token');
+  for (const tokenEl of tokens) {
+    const rects = tokenEl.getClientRects();
+    for (const r of rects) {
+      if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
+        return tokenEl;
+      }
+    }
+  }
+  return null;
+}
+
+function initDictionaryAndCrossBoxHighlight() {
+  if (isDictAndHighlightInitialized) return;
+  isDictAndHighlightInitialized = true;
+
+  ensureDictInspectBar();
+  ensureDictionaryPopoverElement();
+
+  // Cross-box selection synchronization listeners on Box 1
+  const syncEvents = ['select', 'keyup', 'mouseup', 'touchend'];
+  syncEvents.forEach((evt) => {
+    textOutputBox.addEventListener(evt, () => {
+      requestAnimationFrame(syncBox1SelectionToBox2);
+    });
+  });
+
+  document.addEventListener('selectionchange', () => {
+    if (document.activeElement === textOutputBox) {
+      syncBox1SelectionToBox2();
+    }
+  });
+
+  // Desktop Mouse-Over hit-testing across Box 1 tokens
+  if (box1Wrapper) {
+    box1Wrapper.addEventListener('mousemove', (e) => {
+      if (currentLang !== 'ja') return;
+      if (e.buttons !== 0) return;
+
+      const hitToken = findBox1TokenAtPoint(e.clientX, e.clientY);
+      if (hitToken) {
+        const hitIdx = Number(hitToken.getAttribute('data-seg-idx'));
+        if (hitIdx !== activeHoveredSegIdx) {
+          triggerTokenDictionaryLookup(hitToken);
+        } else {
+          clearTimeout(dictHoverHideTimer);
+        }
+      } else if (!isInspectModeActive && activeHoveredSegIdx !== null) {
+        scheduleHideDictionaryPopover(180);
+      }
+    });
+
+    box1Wrapper.addEventListener('mouseleave', () => {
+      if (!isInspectModeActive && activeHoveredSegIdx !== null) {
+        scheduleHideDictionaryPopover(180);
+      }
+    });
+
+    // Mobile Option C: Tap word in Box 1 when Dictionary Inspect Mode is ON
+    box1Wrapper.addEventListener('click', (e) => {
+      if (currentLang !== 'ja' || !isInspectModeActive) return;
+      const hitToken = e.target.closest('.box1-token') || findBox1TokenAtPoint(e.clientX, e.clientY);
+      if (hitToken) {
+        e.preventDefault();
+        e.stopPropagation();
+        triggerTokenDictionaryLookup(hitToken);
+      }
+    });
+  }
+
+  // Close popover when tapping outside
+  document.addEventListener('mousedown', (e) => {
+    const pop = document.getElementById('jotoba-dict-popover');
+    const bar = document.getElementById('dict-inspect-bar');
+    if (pop && !pop.classList.contains('hidden')) {
+      if (!pop.contains(e.target) && (!box1Wrapper || !box1Wrapper.contains(e.target)) && (!bar || !bar.contains(e.target))) {
+        hideDictionaryPopover();
+      }
+    }
+  });
+
+  document.addEventListener('touchstart', (e) => {
+    const pop = document.getElementById('jotoba-dict-popover');
+    const bar = document.getElementById('dict-inspect-bar');
+    if (pop && !pop.classList.contains('hidden')) {
+      if (!pop.contains(e.target) && (!box1Wrapper || !box1Wrapper.contains(e.target)) && (!bar || !bar.contains(e.target))) {
+        hideDictionaryPopover();
+      }
+    }
+  }, { passive: true });
+}
+
+/* ==========================================================================
    Chinese Pinyin Tone Normalizer & Hybrid Phrase/All-Tone IME Engine
    ========================================================================== */
 const PINYIN_ACCENT_MAP = {
@@ -1334,7 +1948,6 @@ const PINYIN_ACCENT_MAP = {
   'ü': { base: 'v', tone: '' }
 };
 
-/* Preserves string length while folding accented Pinyin vowels to plain ASCII */
 function foldPinyinAccents(str) {
   if (!str) return '';
   const nfc = typeof str.normalize === 'function' ? str.normalize('NFC') : str;
@@ -1350,7 +1963,6 @@ function foldPinyinAccents(str) {
   return out;
 }
 
-/* Parse a Pinyin syllable or phrase into toneless, toned (if specified), and Google API query */
 function parseChinesePinyinInput(rawInput) {
   const nfc = (typeof rawInput.normalize === 'function' ? rawInput.normalize('NFC') : rawInput).trim();
   const rawTokens = nfc.split(/\s+/).filter(Boolean);
@@ -1480,7 +2092,6 @@ function lookupSinglePinyinSyllableCandidates(baseSyllable, toneNum = '') {
     if (ch && !out.includes(ch)) out.push(ch);
   };
 
-  // 1. If a specific tone (1..4) was typed via accent or digit, prioritize that exact tone first
   if (toneNum) {
     const tonedKey = `${baseSyllable}${toneNum}`;
     if (ZH_PINYIN_TONED_INDEX.has(tonedKey)) {
@@ -1488,12 +2099,10 @@ function lookupSinglePinyinSyllableCandidates(baseSyllable, toneNum = '') {
     }
   }
 
-  // 2. Curated dictionary for common syllables across all tones
   if (LOCAL_ZH_IME_DICT[baseSyllable]) {
     LOCAL_ZH_IME_DICT[baseSyllable].forEach(add);
   }
 
-  // 3. Interleave characters across tones 1, 2, 3, 4, 0 so all tones (ˉ ˊ ˇ ˋ) are represented
   for (let round = 0; round < 4; round++) {
     for (const t of ['1', '2', '3', '4', '0']) {
       const tList = ZH_PINYIN_TONED_INDEX.get(`${baseSyllable}${t}`);
@@ -1501,7 +2110,6 @@ function lookupSinglePinyinSyllableCandidates(baseSyllable, toneNum = '') {
     }
   }
 
-  // 4. Fill remaining from toneless index
   if (ZH_PINYIN_TONELESS_INDEX.has(baseSyllable)) {
     ZH_PINYIN_TONELESS_INDEX.get(baseSyllable).forEach(add);
   }
@@ -1509,7 +2117,6 @@ function lookupSinglePinyinSyllableCandidates(baseSyllable, toneNum = '') {
   return out;
 }
 
-/* Split concatenated toneless Pinyin (e.g. "nihao" -> ["ni", "hao"]) using valid Pinyin keys */
 function segmentConcatenatedPinyin(tonelessStr) {
   buildChinesePinyinIndex();
   const n = tonelessStr.length;
@@ -1542,18 +2149,15 @@ function buildLocalChineseSuggestions(rawPinyin) {
     if (val && !results.includes(val)) results.push(val);
   };
 
-  // 1. Direct phrase match in LOCAL_ZH_IME_DICT
   if (LOCAL_ZH_IME_DICT[tonelessJoined]) {
     LOCAL_ZH_IME_DICT[tonelessJoined].forEach(addUnique);
   }
 
-  // 2. If single syllable (with or without explicit tone), return all-tone options
   if (syllables.length === 1) {
     const singleSyl = syllables[0];
     lookupSinglePinyinSyllableCandidates(singleSyl.base, singleSyl.tone).forEach(addUnique);
   }
 
-  // 3. Multi-syllable offline phrase assembly
   const effectiveSyllables = syllables.length > 1
     ? syllables
     : segmentConcatenatedPinyin(tonelessJoined).map(b => ({ base: b, tone: '' }));
@@ -1581,7 +2185,6 @@ function buildLocalChineseSuggestions(rawPinyin) {
     }
     if (assembledBest) addUnique(assembledBest);
 
-    // Also include top single-character options for the first syllable
     const firstSyl = effectiveSyllables[0];
     lookupSinglePinyinSyllableCandidates(firstSyl.base, firstSyl.tone).slice(0, 8).forEach(addUnique);
   }
@@ -2039,6 +2642,7 @@ function showTypingSuggestions(suggestions, replaceRange) {
 function clearAlignedSegmentsAndSuggestions() {
   alignedSegments = [];
   showTypingSuggestions([], null);
+  hideDictionaryPopover();
 }
 
 async function handleBox2Input() {
@@ -2482,13 +3086,11 @@ async function updateChineseTypingSuggestions(rawPinyin, replaceSpec) {
 
     if (remoteList.length > 0) {
       const merged = [];
-      // If user explicitly typed a tone mark or tone number (e.g. mǎ or ma3), keep exact tone matches first
       const ordered = hasExplicitTone ? [...localList, ...remoteList] : [...remoteList, ...localList];
       for (const item of ordered) {
         if (item && !merged.includes(item)) merged.push(item);
       }
 
-      // If user is actively typing in Box 2, update Box 1's live preview with the #1 phrase candidate
       if (replaceSpec.liveUpdateBox1 && merged[0] && document.activeElement === romanizedOutputBox) {
         const nextBox1 = (replaceSpec.prefixSrc || '') + merged[0] + (replaceSpec.suffixSrc || '');
         textOutputBox.value = nextBox1;
@@ -2582,6 +3184,9 @@ function applyImeSuggestion(suggestion, replaceRange) {
 let currentConversionId = 0;
 
 async function updateRomanization(triggerSuggestions = false, forceSyncBox2 = false) {
+  initDictionaryAndCrossBoxHighlight();
+  ensureDictInspectBar();
+
   const text = textOutputBox.value;
   const conversionId = ++currentConversionId;
   charCount.textContent = `${text.length} char${text.length === 1 ? '' : 's'}`;
@@ -2611,11 +3216,6 @@ async function updateRomanization(triggerSuggestions = false, forceSyncBox2 = fa
       try {
         const tokens = await kuroshiroAnalyzer.parse(text);
         const furiganaHtml = await buildFuriganaHtmlFromTokens(tokens);
-        const rawRomaji = await convertTokensWithKuroshiro(tokens, {
-          to: 'romaji',
-          mode: 'spaced',
-          romajiSystem: 'hepburn'
-        });
         const newSegments = await buildJapaneseAlignedSegments(tokens);
 
         if (conversionId !== currentConversionId || currentLang !== 'ja') return;
@@ -2625,8 +3225,9 @@ async function updateRomanization(triggerSuggestions = false, forceSyncBox2 = fa
           ? furiganaHtml + '\u200b'
           : furiganaHtml;
 
-        const romResult = postProcessJapaneseRomajiNumbers(rawRomaji);
-        setBox2Content(romResult.plain, romResult.html, forceSyncBox2);
+        const segStrings = buildBox2SegmentedStrings(newSegments);
+        setBox2Content(segStrings.plain, segStrings.html, forceSyncBox2);
+        syncBox1SelectionToBox2();
         autoResizeBoxes();
         return;
       } catch (e) {
@@ -2635,18 +3236,20 @@ async function updateRomanization(triggerSuggestions = false, forceSyncBox2 = fa
     }
 
     furiganaBackdrop.innerHTML = fallbackJapaneseFuriganaHtml(text);
-    const initialFallbackRom = fallbackJapaneseRomanizeWithBlueNumbers(text);
     alignedSegments = buildFallbackJapaneseAlignedSegments(text);
-    setBox2Content(initialFallbackRom.plain, initialFallbackRom.html, forceSyncBox2);
+    const initialSegStrings = buildBox2SegmentedStrings(alignedSegments);
+    setBox2Content(initialSegStrings.plain, initialSegStrings.html, forceSyncBox2);
+    syncBox1SelectionToBox2();
     autoResizeBoxes();
 
     await ensureKanjiReadingsLoaded(text);
     if (conversionId !== currentConversionId || currentLang !== 'ja') return;
 
     furiganaBackdrop.innerHTML = fallbackJapaneseFuriganaHtml(text);
-    const updatedFallbackRom = fallbackJapaneseRomanizeWithBlueNumbers(text);
     alignedSegments = buildFallbackJapaneseAlignedSegments(text);
-    setBox2Content(updatedFallbackRom.plain, updatedFallbackRom.html, forceSyncBox2);
+    const updatedSegStrings = buildBox2SegmentedStrings(alignedSegments);
+    setBox2Content(updatedSegStrings.plain, updatedSegStrings.html, forceSyncBox2);
+    syncBox1SelectionToBox2();
     autoResizeBoxes();
   } else {
     furiganaBackdrop.innerHTML = '';
@@ -2659,17 +3262,11 @@ async function updateRomanization(triggerSuggestions = false, forceSyncBox2 = fa
       autoResizeBoxes();
       return;
     }
-    const result = await romanizeNonJapaneseTextAndNumbers(text, currentLang);
     if (conversionId !== currentConversionId) return;
-    if (currentLang === 'zh') {
-      alignedSegments = buildChineseAlignedSegments(text);
-    } else {
-      alignedSegments = text.trim().split(/\s+/).map(word => ({
-        src: word,
-        rom: currentLang === 'ru' ? romanizeRussian(word) : romanizeKorean(word)
-      }));
-    }
-    setBox2Content(result.plain, result.html, forceSyncBox2);
+    alignedSegments = buildNonJapaneseAlignedSegments(text, currentLang);
+    const segStrings = buildBox2SegmentedStrings(alignedSegments);
+    setBox2Content(segStrings.plain, segStrings.html, forceSyncBox2);
+    syncBox1SelectionToBox2();
     autoResizeBoxes();
   }
 }
