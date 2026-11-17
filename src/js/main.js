@@ -19,6 +19,33 @@ function syncBoxFocusState() {
   document.body.classList.toggle('box2-focused', isBox2);
 }
 
+/* Deselect (blur) Box 1 & Box 2 when tapping/clicking the canvas or anywhere outside the boxes */
+function blurBoxesOnOutsideInteraction(e) {
+  const activeEl = document.activeElement;
+  if (activeEl !== textOutputBox && activeEl !== romanizedOutputBox) return;
+
+  const target = e.target;
+  if (!target) return;
+
+  const activeBox2Wrapper = document.getElementById('box2-wrapper');
+  if (
+    textOutputBox.contains(target) ||
+    romanizedOutputBox.contains(target) ||
+    (box1Wrapper && box1Wrapper.contains(target)) ||
+    (activeBox2Wrapper && activeBox2Wrapper.contains(target)) ||
+    (candidatesContainer && candidatesContainer.contains(target))
+  ) {
+    return;
+  }
+
+  textOutputBox.blur();
+  romanizedOutputBox.blur();
+  syncBoxFocusState();
+}
+
+document.addEventListener('mousedown', blurBoxesOnOutsideInteraction, true);
+document.addEventListener('touchstart', blurBoxesOnOutsideInteraction, { capture: true, passive: true });
+
 /* ==========================================================================
    Visible Viewport Height Sync (Keeps UI Above Mobile Browser Toolbars)
    ========================================================================== */
@@ -177,7 +204,7 @@ window.addEventListener('touchend', stopDrawing, { passive: false });
 
 textOutputBox.addEventListener('focus', () => {
   syncBoxFocusState();
-  if (currentLang === 'ja' && typeof updateTypingSuggestions === 'function') {
+  if ((currentLang === 'ja' || currentLang === 'zh') && typeof updateTypingSuggestions === 'function') {
     updateTypingSuggestions(textOutputBox.value);
   }
 });
