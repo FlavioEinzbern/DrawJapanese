@@ -551,6 +551,8 @@ async function renderBox1FuriganaOnly(text) {
   furiganaBackdrop.innerHTML = fallbackJapaneseFuriganaHtml(text);
 }
 
+const PURE_JA_NUMBER_SURFACE_REGEX = /^[0-9０-９零〇一二两三四五六七八九十百千万億亿]+$/;
+
 async function buildJapaneseAlignedSegments(tokens) {
   const segs = [];
   let charCursor = 0;
@@ -574,7 +576,8 @@ async function buildJapaneseAlignedSegments(tokens) {
       mode: 'spaced',
       romajiSystem: 'hepburn'
     });
-    const processed = postProcessJapaneseRomajiNumbers(rawRom);
+    const isKanjiOrDigitNumber = PURE_JA_NUMBER_SURFACE_REGEX.test(src);
+    const processed = postProcessJapaneseRomajiNumbers(rawRom, isKanjiOrDigitNumber);
     segs.push({
       idx,
       src,
@@ -662,7 +665,6 @@ function buildNonJapaneseAlignedSegments(text, lang) {
     return segs;
   }
 
-  // Korean & Russian: split by whitespace and number tokens while tracking exact character offsets
   const tokens = text.split(/(\s+|[0-9０-９]+|[零〇一二两三四五六七八九十百千万億亿]+)/g).filter(Boolean);
   for (const tok of tokens) {
     const start = charCursor;
@@ -1134,7 +1136,7 @@ function fallbackJapaneseFuriganaHtml(str) {
   return html.endsWith('\n') ? html + '\u200b' : html;
 }
 
-function postProcessJapaneseRomajiNumbers(rawRomaji) {
+function postProcessJapaneseRomajiNumbers(rawRomaji, isWholeTokenNumber = false) {
   const parts = rawRomaji.split(/([0-9０-９]+)/g).filter(Boolean);
   let plainOut = '';
   let htmlOut = '';
@@ -1158,9 +1160,14 @@ function postProcessJapaneseRomajiNumbers(rawRomaji) {
     }
   }
 
+  const cleanPlain = plainOut.replace(/ +/g, ' ').trim();
+  const cleanHtml = isWholeTokenNumber && cleanPlain
+    ? `<span class="romanized-number">${escapeHtml(cleanPlain)}</span>`
+    : htmlOut.replace(/ +/g, ' ').trim();
+
   return {
-    plain: plainOut.replace(/ +/g, ' ').trim(),
-    html: htmlOut.replace(/ +/g, ' ').trim()
+    plain: cleanPlain,
+    html: cleanHtml
   };
 }
 
@@ -1433,32 +1440,45 @@ async function romanizeNonJapaneseTextAndNumbers(text, lang) {
    Jotoba Dictionary Popover (Mouse-Over + Mobile Option C) & Cross-Box Sync
    ========================================================================== */
 function ensureDictInspectBar() {
-  let bar = document.getElementById('dict-inspect-bar');
-  if (!bar && box1Wrapper && box1Wrapper.parentNode) {
-    bar = document.createElement('div');
-    bar.id = 'dict-inspect-bar';
-    bar.innerHTML = `
-      <button id="btn-inspect-dict" type="button" title="Toggle Japanese Dictionary Inspect Mode">
-        <span>📖</span>
-        <span id="btn-inspect-dict-label">Dictionary: OFF</span>
-      </button>
-      <span id="dict-inspect-hint">Hover words (Desktop) or turn ON to tap words</span>
-    `;
-    box1Wrapper.parentNode.insertBefore(bar, box1Wrapper);
-
-    const btn = bar.querySelector('#btn-inspect-dict');
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setInspectMode(!isInspectModeActive);
-    });
+  // Remove any legacy standalone bar from earlier checkpoints
+  const legacyBar = document.getElementById('dict-inspect-bar');
+  if (legacyBar && legacyBar.parentNode) {
+    legacyBar.parentNode.removeChild(legacyBar);
   }
 
-  if (bar) {
+  const box1Card = box1Wrapper ? box1Wrapper.closest('.box-card') : null;
+  if (box1Card) {
+    box1Card.classList.add('box1-card');
+    box1Card.classList.toggle('dict-visible', currentLang === 'ja');
+  }
+
+  let btn = document.getElementById('btn-inspect-dict');
+  if (!btn) {
+    const addSpaceBtn = document.getElementById('btn-add-space');
+    if (addSpaceBtn && addSpaceBtn.parentNode) {
+      btn = document.createElement('button');
+      btn.id = 'btn-inspect-dict';
+      btn.type = 'button';
+      btn.title = 'Toggle Japanese Dictionary Inspect Mode';
+      btn.innerHTML = `
+        <span>📖</span>
+        <span id="btn-inspect-dict-label">Dictionary: OFF</span>
+      `;
+      addSpaceBtn.parentNode.insertBefore(btn, addSpaceBtn);
+
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setInspectMode(!isInspectModeActive);
+      });
+    }
+  }
+
+  if (btn) {
     if (currentLang === 'ja') {
-      bar.classList.remove('hidden');
+      btn.classList.remove('hidden');
     } else {
-      bar.classList.add('hidden');
+      btn.classList.add('hidden');
       if (isInspectModeActive) setInspectMode(false);
     }
   }
@@ -1470,14 +1490,10 @@ function setInspectMode(enabled) {
 
   const btn = document.getElementById('btn-inspect-dict');
   const label = document.getElementById('btn-inspect-dict-label');
-  const hint = document.getElementById('dict-inspect-hint');
 
-  if (btn && label && hint) {
+  if (btn && label) {
     btn.classList.toggle('inspect-active', isInspectModeActive);
     label.textContent = isInspectModeActive ? 'Dictionary: ON' : 'Dictionary: OFF';
-    hint.textContent = isInspectModeActive
-      ? 'Tap any Japanese word below to see its meaning'
-      : 'Hover words (Desktop) or turn ON to tap words';
   }
 
   if (isInspectModeActive) {
@@ -1645,7 +1661,6 @@ async function fetchJotobaDictionaryData(surface, basicForm, readingHira) {
     }
   }
 
-  // Extract individual Kanji characters in the token for Kanji breakdown
   const kanjiChars = [...new Set([...surface].filter(ch => KANJI_REGEX.test(ch)))];
   let kanjiDetails = [];
 
@@ -1862,7 +1877,6 @@ function initDictionaryAndCrossBoxHighlight() {
   ensureDictInspectBar();
   ensureDictionaryPopoverElement();
 
-  // Cross-box selection synchronization listeners on Box 1
   const syncEvents = ['select', 'keyup', 'mouseup', 'touchend'];
   syncEvents.forEach((evt) => {
     textOutputBox.addEventListener(evt, () => {
@@ -1876,7 +1890,6 @@ function initDictionaryAndCrossBoxHighlight() {
     }
   });
 
-  // Desktop Mouse-Over hit-testing across Box 1 tokens
   if (box1Wrapper) {
     box1Wrapper.addEventListener('mousemove', (e) => {
       if (currentLang !== 'ja') return;
@@ -1901,7 +1914,6 @@ function initDictionaryAndCrossBoxHighlight() {
       }
     });
 
-    // Mobile Option C: Tap word in Box 1 when Dictionary Inspect Mode is ON
     box1Wrapper.addEventListener('click', (e) => {
       if (currentLang !== 'ja' || !isInspectModeActive) return;
       const hitToken = e.target.closest('.box1-token') || findBox1TokenAtPoint(e.clientX, e.clientY);
@@ -1913,12 +1925,11 @@ function initDictionaryAndCrossBoxHighlight() {
     });
   }
 
-  // Close popover when tapping outside
   document.addEventListener('mousedown', (e) => {
     const pop = document.getElementById('jotoba-dict-popover');
-    const bar = document.getElementById('dict-inspect-bar');
+    const dictBtn = document.getElementById('btn-inspect-dict');
     if (pop && !pop.classList.contains('hidden')) {
-      if (!pop.contains(e.target) && (!box1Wrapper || !box1Wrapper.contains(e.target)) && (!bar || !bar.contains(e.target))) {
+      if (!pop.contains(e.target) && (!box1Wrapper || !box1Wrapper.contains(e.target)) && (!dictBtn || !dictBtn.contains(e.target))) {
         hideDictionaryPopover();
       }
     }
@@ -1926,9 +1937,9 @@ function initDictionaryAndCrossBoxHighlight() {
 
   document.addEventListener('touchstart', (e) => {
     const pop = document.getElementById('jotoba-dict-popover');
-    const bar = document.getElementById('dict-inspect-bar');
+    const dictBtn = document.getElementById('btn-inspect-dict');
     if (pop && !pop.classList.contains('hidden')) {
-      if (!pop.contains(e.target) && (!box1Wrapper || !box1Wrapper.contains(e.target)) && (!bar || !bar.contains(e.target))) {
+      if (!pop.contains(e.target) && (!box1Wrapper || !box1Wrapper.contains(e.target)) && (!dictBtn || !dictBtn.contains(e.target))) {
         hideDictionaryPopover();
       }
     }
