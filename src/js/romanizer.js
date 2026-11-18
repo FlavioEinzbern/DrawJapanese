@@ -11,37 +11,404 @@ let dictHoverHideTimer = null;
 let dictLookupRequestId = 0;
 let isDictAndHighlightInitialized = false;
 let currentConversionId = 0;
+let lastEngineStatusType = 'loading';
 
-/* Dictionary Target Language State ('en' | 'es' | 'pt') & Hybrid Cache */
+/* ==========================================================================
+   Full-App & Dictionary Localization ('en' | 'es' | 'pt') + Browser Detection
+   ========================================================================== */
 const DICT_TARGET_LANGS = ['en', 'es', 'pt'];
+
 const DICT_TARGET_META = {
   en: {
     code: 'EN',
+    flag: '🇺🇸',
     name: 'English',
     searching: 'Searching dictionary...',
-    notFound: 'No exact entry found for'
+    notFound: 'No exact entry found for',
+    closeLabel: 'Close dictionary'
   },
   es: {
     code: 'ES',
+    flag: '🇪🇸',
     name: 'Español',
     searching: 'Buscando en el diccionario...',
-    notFound: 'No se encontró entrada exacta para'
+    notFound: 'No se encontró entrada exacta para',
+    closeLabel: 'Cerrar diccionario'
   },
   pt: {
     code: 'PT',
+    flag: '🇧🇷',
     name: 'Português',
     searching: 'Pesquisando no dicionário...',
-    notFound: 'Nenhuma entrada exata encontrada para'
+    notFound: 'Nenhuma entrada exata encontrada para',
+    closeLabel: 'Fechar dicionário'
   }
 };
 
+const APP_UI_STRINGS = {
+  en: {
+    pageTitle: 'Multilingual Handwriting & Romanizer',
+    tabs: { ja: 'Japanese', zh: 'Chinese', ko: 'Korean', ru: 'Russian' },
+    status: {
+      loading: 'Loading dictionary...',
+      ready: 'Kuroshiro + Kuromoji Ready',
+      'ready-fallback': 'Ready (kanjiapi.dev Mode)'
+    },
+    theme: {
+      toLight: 'Switch to Light Mode',
+      toDark: 'Switch to Dark Mode'
+    },
+    langConfig: {
+      ja: {
+        instruction: 'Draw Japanese (Kanji, Hiragana, Katakana)',
+        romajiName: 'Romaji (Hepburn)',
+        desc: 'Editable — lowercase → Hiragana, UPPERCASE → Katakana'
+      },
+      zh: {
+        instruction: 'Draw Chinese (Simplified / Traditional Hanzi)',
+        romajiName: 'Pinyin (Toned)',
+        desc: 'Editable — type Pinyin to convert to Hanzi'
+      },
+      ko: {
+        instruction: 'Draw Korean (Hangul Syllables / Jamo)',
+        romajiName: 'Revised Romanization (RR)',
+        desc: 'Editable — type Romanization to convert to Hangul'
+      },
+      ru: {
+        instruction: 'Draw Russian (Cyrillic Script)',
+        romajiName: 'Latin Transliteration',
+        desc: 'Editable — type Latin letters to convert to Cyrillic'
+      }
+    },
+    canvas: {
+      recognizing: 'Recognizing...',
+      undo: 'Undo',
+      clearCanvas: 'Clear Canvas',
+      candidateHeader: 'Recognition Candidates',
+      candidateHint: 'Draw a character on the canvas above...',
+      expandCanvas: 'Expand canvas',
+      collapseCanvas: 'Back to default view'
+    },
+    boxes: {
+      recognizedText: 'Recognized Text',
+      charSingular: 'char',
+      charPlural: 'chars',
+      dictOn: 'Dictionary: ON',
+      dictOff: 'Dictionary: OFF',
+      dictTitle: 'Toggle Dictionary (Hover on Desktop / Tap on Mobile)',
+      space: 'Space',
+      spaceTitle: 'Insert Space',
+      backspaceTitle: 'Backspace',
+      clear: 'Clear',
+      clearTitle: 'Clear All Text',
+      copy: 'Copy',
+      copyBox1Title: 'Copy Text',
+      copyBox2Title: 'Copy Romanization',
+      box1Footer: 'Editable — draw or type directly'
+    },
+    toasts: {
+      nothingToCopy: 'Nothing to copy!',
+      copiedBox1: 'Copied Character text to clipboard!',
+      copiedBox2: 'Copied Romanization to clipboard!',
+      langChanged: 'Language set to English (EN)'
+    }
+  },
+  es: {
+    pageTitle: 'Escritura a Mano y Romanizador Multilingüe',
+    tabs: { ja: 'Japonés', zh: 'Chino', ko: 'Coreano', ru: 'Ruso' },
+    status: {
+      loading: 'Cargando diccionario...',
+      ready: 'Kuroshiro + Kuromoji Listo',
+      'ready-fallback': 'Listo (Modo kanjiapi.dev)'
+    },
+    theme: {
+      toLight: 'Cambiar a modo claro',
+      toDark: 'Cambiar a modo oscuro'
+    },
+    langConfig: {
+      ja: {
+        instruction: 'Dibuja en japonés (Kanji, Hiragana, Katakana)',
+        romajiName: 'Romaji (Hepburn)',
+        desc: 'Editable — minúsculas → Hiragana, MAYÚSCULAS → Katakana'
+      },
+      zh: {
+        instruction: 'Dibuja en chino (Hanzi simplificado / tradicional)',
+        romajiName: 'Pinyin (con tonos)',
+        desc: 'Editable — escribe Pinyin para convertir a Hanzi'
+      },
+      ko: {
+        instruction: 'Dibuja en coreano (Sílabas Hangul / Jamo)',
+        romajiName: 'Romanización Revisada (RR)',
+        desc: 'Editable — escribe romanización para convertir a Hangul'
+      },
+      ru: {
+        instruction: 'Dibuja en ruso (Alfabeto cirílico)',
+        romajiName: 'Transliteración latina',
+        desc: 'Editable — escribe letras latinas para convertir a cirílico'
+      }
+    },
+    canvas: {
+      recognizing: 'Reconociendo...',
+      undo: 'Deshacer',
+      clearCanvas: 'Limpiar lienzo',
+      candidateHeader: 'Candidatos de reconocimiento',
+      candidateHint: 'Dibuja un carácter en el lienzo de arriba...',
+      expandCanvas: 'Expandir lienzo',
+      collapseCanvas: 'Volver a la vista predeterminada'
+    },
+    boxes: {
+      recognizedText: 'Texto reconocido',
+      charSingular: 'carácter',
+      charPlural: 'caracteres',
+      dictOn: 'Diccionario: ON',
+      dictOff: 'Diccionario: OFF',
+      dictTitle: 'Alternar diccionario (Pasar el ratón en PC / Tocar en móvil)',
+      space: 'Espacio',
+      spaceTitle: 'Insertar espacio',
+      backspaceTitle: 'Retroceso',
+      clear: 'Borrar',
+      clearTitle: 'Borrar todo el texto',
+      copy: 'Copiar',
+      copyBox1Title: 'Copiar texto',
+      copyBox2Title: 'Copiar romanización',
+      box1Footer: 'Editable — dibuja o escribe directamente'
+    },
+    toasts: {
+      nothingToCopy: '¡Nada que copiar!',
+      copiedBox1: '¡Texto copiado al portapapeles!',
+      copiedBox2: '¡Romanización copiada al portapapeles!',
+      langChanged: 'Idioma cambiado a Español (ES)'
+    }
+  },
+  pt: {
+    pageTitle: 'Escrita à Mão e Romanizador Multilíngue',
+    tabs: { ja: 'Japonês', zh: 'Chinês', ko: 'Coreano', ru: 'Russo' },
+    status: {
+      loading: 'Carregando dicionário...',
+      ready: 'Kuroshiro + Kuromoji Pronto',
+      'ready-fallback': 'Pronto (Modo kanjiapi.dev)'
+    },
+    theme: {
+      toLight: 'Mudar para o modo claro',
+      toDark: 'Mudar para o modo escuro'
+    },
+    langConfig: {
+      ja: {
+        instruction: 'Desenhe em japonês (Kanji, Hiragana, Katakana)',
+        romajiName: 'Romaji (Hepburn)',
+        desc: 'Editável — minúsculas → Hiragana, MAIÚSCULAS → Katakana'
+      },
+      zh: {
+        instruction: 'Desenhe em chinês (Hanzi simplificado / tradicional)',
+        romajiName: 'Pinyin (com tons)',
+        desc: 'Editável — digite Pinyin para converter em Hanzi'
+      },
+      ko: {
+        instruction: 'Desenhe em coreano (Sílabas Hangul / Jamo)',
+        romajiName: 'Romanização Revisada (RR)',
+        desc: 'Editável — digite a romanização para converter em Hangul'
+      },
+      ru: {
+        instruction: 'Desenhe em russo (Alfabeto cirílico)',
+        romajiName: 'Transliteração latina',
+        desc: 'Editável — digite letras latinas para converter em cirílico'
+      }
+    },
+    canvas: {
+      recognizing: 'Reconhecendo...',
+      undo: 'Desfazer',
+      clearCanvas: 'Limpar tela',
+      candidateHeader: 'Candidatos de reconhecimento',
+      candidateHint: 'Desenhe um caractere na tela acima...',
+      expandCanvas: 'Expandir tela',
+      collapseCanvas: 'Voltar à visualização padrão'
+    },
+    boxes: {
+      recognizedText: 'Texto reconhecido',
+      charSingular: 'caractere',
+      charPlural: 'caracteres',
+      dictOn: 'Dicionário: ON',
+      dictOff: 'Dicionário: OFF',
+      dictTitle: 'Alternar dicionário (Passar o mouse no PC / Tocar no celular)',
+      space: 'Espaço',
+      spaceTitle: 'Inserir espaço',
+      backspaceTitle: 'Apagar',
+      clear: 'Limpar',
+      clearTitle: 'Limpar todo o texto',
+      copy: 'Copiar',
+      copyBox1Title: 'Copiar texto',
+      copyBox2Title: 'Copiar romanização',
+      box1Footer: 'Editável — desenhe ou digite diretamente'
+    },
+    toasts: {
+      nothingToCopy: 'Nada para copiar!',
+      copiedBox1: 'Texto copiado para a área de transferência!',
+      copiedBox2: 'Romanização copiada para a área de transferência!',
+      langChanged: 'Idioma alterado para Português (PT)'
+    }
+  }
+};
+
+function detectBrowserAppLang() {
+  const navLangs = (typeof navigator !== 'undefined' && Array.isArray(navigator.languages) && navigator.languages.length > 0)
+    ? navigator.languages
+    : [(typeof navigator !== 'undefined' && (navigator.language || navigator.userLanguage)) || 'en'];
+
+  for (const raw of navLangs) {
+    const lower = String(raw || '').toLowerCase();
+    if (lower.startsWith('es')) return 'es';
+    if (lower.startsWith('pt')) return 'pt';
+    if (lower.startsWith('en')) return 'en';
+  }
+  return 'en';
+}
+
 let dictTargetLang = (() => {
   try {
-    const saved = localStorage.getItem('dictTargetLang');
+    const saved = localStorage.getItem('appUiLang');
     if (saved && DICT_TARGET_LANGS.includes(saved)) return saved;
   } catch (_) {}
-  return 'en';
+  return detectBrowserAppLang();
 })();
+
+function getAppStrings() {
+  return APP_UI_STRINGS[dictTargetLang] || APP_UI_STRINGS.en;
+}
+
+function formatCharCountText(count) {
+  const s = getAppStrings().boxes;
+  return `${count} ${count === 1 ? s.charSingular : s.charPlural}`;
+}
+
+/* Override setEngineStatus from lang-ja.js so the status badge stays localized */
+function setEngineStatus(type) {
+  lastEngineStatusType = type || 'loading';
+  const s = getAppStrings().status;
+  const localizedMsg = s[lastEngineStatusType] || s.loading;
+
+  statusText.textContent = localizedMsg;
+  statusBadge.title = localizedMsg;
+  statusBadge.className = 'group flex items-center text-xs font-medium p-1.5 hover:px-2.5 hover:py-1 rounded-full border transition-all cursor-default ';
+
+  if (type === 'ready') {
+    statusBadge.className += 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    statusBadge.querySelector('span').className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0';
+  } else if (type === 'ready-fallback') {
+    statusBadge.className += 'bg-blue-50 text-blue-700 border-blue-200';
+    statusBadge.querySelector('span').className = 'w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0';
+  } else {
+    statusBadge.className += 'bg-amber-50 text-amber-700 border-amber-200';
+    statusBadge.querySelector('span').className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0';
+  }
+}
+
+function applyAppLanguageUI() {
+  const ui = getAppStrings();
+  document.documentElement.lang = dictTargetLang;
+  document.title = ui.pageTitle;
+
+  // Sync LANGUAGES config object in memory so tab switches use localized strings
+  if (typeof LANGUAGES === 'object' && LANGUAGES) {
+    for (const langKey of ['ja', 'zh', 'ko', 'ru']) {
+      if (LANGUAGES[langKey] && ui.langConfig[langKey]) {
+        LANGUAGES[langKey].instruction = ui.langConfig[langKey].instruction;
+        LANGUAGES[langKey].romajiName = ui.langConfig[langKey].romajiName;
+        LANGUAGES[langKey].desc = ui.langConfig[langKey].desc;
+      }
+    }
+  }
+
+  // Top Language Tabs
+  document.querySelectorAll('.lang-tab').forEach((tab) => {
+    const code = tab.getAttribute('data-lang');
+    const spans = tab.querySelectorAll('span');
+    if (code && ui.tabs[code] && spans.length >= 2) {
+      spans[1].textContent = ui.tabs[code];
+    }
+  });
+
+  // Status Badge & Theme Toggle Tooltip
+  setEngineStatus(lastEngineStatusType);
+  const themeBtn = document.getElementById('btn-theme-toggle');
+  if (themeBtn) {
+    const isDark = document.body.classList.contains('dark-mode');
+    themeBtn.title = isDark ? ui.theme.toLight : ui.theme.toDark;
+  }
+
+  // Canvas Header, Instructions & Buttons
+  const activeLangCfg = ui.langConfig[currentLang] || ui.langConfig.ja;
+  if (drawingInstructions) drawingInstructions.textContent = activeLangCfg.instruction;
+  if (recognizingIndicator) recognizingIndicator.textContent = ui.canvas.recognizing;
+
+  const undoBtn = document.getElementById('btn-undo');
+  if (undoBtn) undoBtn.textContent = ui.canvas.undo;
+
+  const clearCanvasBtn = document.getElementById('btn-clear-canvas');
+  if (clearCanvasBtn) clearCanvasBtn.textContent = ui.canvas.clearCanvas;
+
+  const candHeaderSpan = document.querySelector('.candidate-header span');
+  if (candHeaderSpan) candHeaderSpan.textContent = ui.canvas.candidateHeader;
+
+  if (candidatesContainer && candidatesContainer.children.length === 1 && candidatesContainer.firstElementChild.tagName === 'SPAN') {
+    candidatesContainer.firstElementChild.textContent = ui.canvas.candidateHint;
+  }
+
+  const fsBtn = document.getElementById('btn-toggle-fullscreen');
+  if (fsBtn) {
+    const isExpanded = document.body.classList.contains('canvas-expanded');
+    fsBtn.title = isExpanded ? ui.canvas.collapseCanvas : ui.canvas.expandCanvas;
+  }
+
+  // Box 1 & Box 2 Headers, Buttons, Char Count & Footers
+  const box1HeaderTitle = document.querySelector('.box1-card .box-card-header h2');
+  if (box1HeaderTitle) box1HeaderTitle.textContent = ui.boxes.recognizedText;
+
+  if (charCount && textOutputBox) {
+    charCount.textContent = formatCharCountText(textOutputBox.value.length);
+  }
+
+  const dictBtn = document.getElementById('btn-inspect-dict');
+  const dictBtnLabel = document.getElementById('btn-inspect-dict-label');
+  if (dictBtn) dictBtn.title = ui.boxes.dictTitle;
+  if (dictBtnLabel) {
+    dictBtnLabel.textContent = isInspectModeActive ? ui.boxes.dictOn : ui.boxes.dictOff;
+  }
+
+  const spaceBtn = document.getElementById('btn-add-space');
+  if (spaceBtn) {
+    spaceBtn.textContent = ui.boxes.space;
+    spaceBtn.title = ui.boxes.spaceTitle;
+  }
+
+  const backspaceBtn = document.getElementById('btn-backspace');
+  if (backspaceBtn) backspaceBtn.title = ui.boxes.backspaceTitle;
+
+  const clearTextBtn = document.getElementById('btn-clear-text');
+  if (clearTextBtn) {
+    clearTextBtn.textContent = ui.boxes.clear;
+    clearTextBtn.title = ui.boxes.clearTitle;
+  }
+
+  const copyBox1Btn = document.getElementById('btn-copy-box1');
+  if (copyBox1Btn) {
+    copyBox1Btn.textContent = ui.boxes.copy;
+    copyBox1Btn.title = ui.boxes.copyBox1Title;
+  }
+
+  const copyBox2Btn = document.getElementById('btn-copy-box2');
+  if (copyBox2Btn) {
+    copyBox2Btn.textContent = ui.boxes.copy;
+    copyBox2Btn.title = ui.boxes.copyBox2Title;
+  }
+
+  if (romanizationLabel) romanizationLabel.textContent = activeLangCfg.romajiName;
+  if (translitDesc) translitDesc.textContent = activeLangCfg.desc;
+
+  const box1FooterSpan = document.querySelector('.box1-card .box-footer span');
+  if (box1FooterSpan) box1FooterSpan.textContent = ui.boxes.box1Footer;
+
+  updateDictLangHeaderButtonUI();
+}
 
 const HYBRID_DICT_LANG_CACHE = new Map();
 
@@ -301,7 +668,7 @@ async function handleBox2Input() {
   if (!rawBox2.trim()) {
     textOutputBox.value = '';
     furiganaBackdrop.innerHTML = '';
-    charCount.textContent = '0 chars';
+    charCount.textContent = formatCharCountText(0);
     clearAlignedSegmentsAndSuggestions();
     autoResizeBoxes();
     return;
@@ -312,7 +679,7 @@ async function handleBox2Input() {
 
   const newBox1Text = prefixSrc + convertedMiddle + suffixSrc;
   textOutputBox.value = newBox1Text;
-  charCount.textContent = `${newBox1Text.length} char${newBox1Text.length === 1 ? '' : 's'}`;
+  charCount.textContent = formatCharCountText(newBox1Text.length);
 
   if (currentLang === 'ja') {
     await renderBox1FuriganaOnly(newBox1Text);
@@ -389,7 +756,7 @@ async function updateChineseTypingSuggestions(rawPinyin, replaceSpec) {
       if (replaceSpec.liveUpdateBox1 && merged[0] && document.activeElement === romanizedOutputBox) {
         const nextBox1 = (replaceSpec.prefixSrc || '') + merged[0] + (replaceSpec.suffixSrc || '');
         textOutputBox.value = nextBox1;
-        charCount.textContent = `${nextBox1.length} char${nextBox1.length === 1 ? '' : 's'}`;
+        charCount.textContent = formatCharCountText(nextBox1.length);
         const zhBuilt = buildChineseAlignedSegmentsAndBackdrop(nextBox1);
         furiganaBackdrop.innerHTML = zhBuilt.backdropHtml;
         currentEnd = (replaceSpec.prefixSrc || '').length + merged[0].length;
@@ -476,8 +843,33 @@ function applyImeSuggestion(suggestion, replaceRange) {
 }
 
 /* ==========================================================================
-   Option 2 + UI Option B: Top Header EN/ES/PT Selector & Hybrid Translator
+   Header Dropdown Menu (EN / ES / PT) & Hybrid Dictionary Translator
    ========================================================================== */
+function closeDictLangDropdown() {
+  const menu = document.getElementById('dict-lang-dropdown');
+  if (menu) menu.classList.add('hidden');
+}
+
+function selectAppAndDictLanguage(newLang) {
+  if (!DICT_TARGET_LANGS.includes(newLang)) return;
+  dictTargetLang = newLang;
+  try {
+    localStorage.setItem('appUiLang', dictTargetLang);
+  } catch (_) {}
+
+  closeDictLangDropdown();
+  applyAppLanguageUI();
+
+  if (typeof showToast === 'function') {
+    showToast(getAppStrings().toasts.langChanged);
+  }
+
+  const pop = document.getElementById('jotoba-dict-popover');
+  if (pop && !pop.classList.contains('hidden') && lastInspectedTokenEl && document.body.contains(lastInspectedTokenEl)) {
+    triggerTokenDictionaryLookup(lastInspectedTokenEl);
+  }
+}
+
 function ensureDictLangHeaderButton() {
   if (!document.getElementById('dict-lang-btn-styles')) {
     const styleEl = document.createElement('style');
@@ -492,47 +884,98 @@ function ensureDictLangHeaderButton() {
         background-color: #475569;
         color: #ffffff;
       }
+      #dict-lang-dropdown {
+        background-color: #ffffff;
+        border-color: #e2e8f0;
+        color: #1e293b;
+      }
+      body.dark-mode #dict-lang-dropdown {
+        background-color: #1e293b;
+        border-color: #334155;
+        color: #f1f5f9;
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+      }
+      .dict-lang-option:hover {
+        background-color: #f1f5f9;
+      }
+      body.dark-mode .dict-lang-option:hover {
+        background-color: #334155;
+      }
+      .dict-lang-option.active-lang-opt {
+        background-color: rgba(99, 102, 241, 0.12);
+        color: #4f46e5;
+        font-weight: 600;
+      }
+      body.dark-mode .dict-lang-option.active-lang-opt {
+        background-color: rgba(99, 102, 241, 0.24);
+        color: #a5b4fc;
+      }
     `;
     document.head.appendChild(styleEl);
   }
 
-  let btn = document.getElementById('btn-dict-lang');
-  if (!btn) {
+  let wrapper = document.getElementById('app-lang-menu-wrapper');
+  if (!wrapper) {
     const themeBtn = document.getElementById('btn-theme-toggle');
     if (themeBtn && themeBtn.parentNode) {
-      btn = document.createElement('button');
+      wrapper = document.createElement('div');
+      wrapper.id = 'app-lang-menu-wrapper';
+      wrapper.className = 'relative inline-block shrink-0';
+
+      const btn = document.createElement('button');
       btn.id = 'btn-dict-lang';
       btn.type = 'button';
-      btn.className = 'px-2.5 py-1 rounded-full border border-slate-200 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-all flex items-center gap-1 shrink-0 select-none';
+      btn.className = 'px-2.5 py-1 rounded-full border border-slate-200 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-all flex items-center gap-1 select-none';
+
+      const dropdown = document.createElement('div');
+      dropdown.id = 'dict-lang-dropdown';
+      dropdown.className = 'hidden absolute right-0 top-full mt-1.5 w-36 rounded-xl border shadow-lg py-1 z-50 overflow-hidden';
+
+      DICT_TARGET_LANGS.forEach((langCode) => {
+        const meta = DICT_TARGET_META[langCode];
+        const optBtn = document.createElement('button');
+        optBtn.type = 'button';
+        optBtn.setAttribute('data-ui-lang', langCode);
+        optBtn.className = 'dict-lang-option w-full px-3 py-1.5 text-left text-xs flex items-center justify-between transition-colors';
+        optBtn.innerHTML = `
+          <span class="flex items-center gap-1.5">
+            <span>${meta.flag}</span>
+            <span>${meta.name}</span>
+          </span>
+          <span class="lang-check-mark text-indigo-500 font-bold"></span>
+        `;
+        optBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          selectAppAndDictLanguage(langCode);
+        });
+        dropdown.appendChild(optBtn);
+      });
 
       btn.addEventListener('mousedown', (e) => e.stopPropagation());
       btn.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
-
       btn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-
-        const currIdx = DICT_TARGET_LANGS.indexOf(dictTargetLang);
-        dictTargetLang = DICT_TARGET_LANGS[(currIdx + 1) % DICT_TARGET_LANGS.length];
-        try {
-          localStorage.setItem('dictTargetLang', dictTargetLang);
-        } catch (_) {}
-
-        updateDictLangHeaderButtonUI();
-
-        const meta = DICT_TARGET_META[dictTargetLang] || DICT_TARGET_META.en;
-        if (typeof showToast === 'function') {
-          showToast(`Dictionary language: ${meta.name} (${meta.code})`);
-        }
-
-        // If a dictionary popover is currently open, immediately re-translate it in place
-        const pop = document.getElementById('jotoba-dict-popover');
-        if (pop && !pop.classList.contains('hidden') && lastInspectedTokenEl && document.body.contains(lastInspectedTokenEl)) {
-          triggerTokenDictionaryLookup(lastInspectedTokenEl);
-        }
+        dropdown.classList.toggle('hidden');
       });
 
-      themeBtn.parentNode.insertBefore(btn, themeBtn);
+      dropdown.addEventListener('mousedown', (e) => e.stopPropagation());
+      dropdown.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+
+      wrapper.appendChild(btn);
+      wrapper.appendChild(dropdown);
+      themeBtn.parentNode.insertBefore(wrapper, themeBtn);
+
+      document.addEventListener('mousedown', (e) => {
+        if (!wrapper.contains(e.target)) closeDictLangDropdown();
+      });
+      document.addEventListener('touchstart', (e) => {
+        if (!wrapper.contains(e.target)) closeDictLangDropdown();
+      }, { passive: true });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeDictLangDropdown();
+      });
     }
   }
 
@@ -543,9 +986,20 @@ function updateDictLangHeaderButtonUI() {
   const btn = document.getElementById('btn-dict-lang');
   if (!btn) return;
   const meta = DICT_TARGET_META[dictTargetLang] || DICT_TARGET_META.en;
-  btn.innerHTML = `<span>🌐</span><span>${meta.code}</span>`;
-  btn.title = `Dictionary Language: ${meta.name} (Click to switch EN / ES / PT)`;
-  btn.setAttribute('aria-label', `Dictionary Language: ${meta.name}`);
+  btn.innerHTML = `<span>🌐</span><span>${meta.code}</span><span class="text-[10px] opacity-75">▾</span>`;
+  btn.title = `${meta.name} (${meta.code})`;
+  btn.setAttribute('aria-label', `${meta.name} (${meta.code})`);
+
+  const dropdown = document.getElementById('dict-lang-dropdown');
+  if (dropdown) {
+    dropdown.querySelectorAll('.dict-lang-option').forEach((opt) => {
+      const code = opt.getAttribute('data-ui-lang');
+      const isSelected = code === dictTargetLang;
+      opt.classList.toggle('active-lang-opt', isSelected);
+      const check = opt.querySelector('.lang-check-mark');
+      if (check) check.textContent = isSelected ? '✓' : '';
+    });
+  }
 }
 
 const POS_LABEL_TRANSLATIONS = {
@@ -733,7 +1187,6 @@ async function buildLocalizedDictionaryData(tokenMeta) {
     return HYBRID_DICT_LANG_CACHE.get(cacheKey);
   }
 
-  // 1. Fetch structural base dictionary entry (Jotoba / CC-CEDICT / Direct-CORS KO / OpenRussian)
   let baseData = null;
   if (currentLang === 'ja') {
     baseData = await lookupJapaneseTokenDict(tokenMeta);
@@ -752,7 +1205,6 @@ async function buildLocalizedDictionaryData(tokenMeta) {
     return baseData;
   }
 
-  // 2. Prepare batch of English specialized senses & character breakdown titles for translation
   const baseSenses = Array.isArray(baseData.senses) ? baseData.senses : [];
   const baseBreakdowns = Array.isArray(baseData.charBreakdown) ? baseData.charBreakdown : [];
 
@@ -766,7 +1218,6 @@ async function buildLocalizedDictionaryData(tokenMeta) {
 
   const queryTerm = (basic && basic !== '*') ? basic : surface;
 
-  // 3. Run Direct Source -> Target (ES/PT) lookup + Jotoba Spanish (if JA+ES) + Batch EN->ES/PT in parallel
   const [translatedBatch, directGtx, jotobaEsSenses] = await Promise.all([
     batchInputs.length > 0 ? translateBatchEnToTarget(batchInputs, targetLang) : Promise.resolve([]),
     !isJaGrammarToken ? fetchDirectTargetGtxBilingual(currentLang, queryTerm, targetLang) : Promise.resolve(null),
@@ -785,7 +1236,6 @@ async function buildLocalizedDictionaryData(tokenMeta) {
     title: translatedBatch[baseSenses.length + idx] || c.title
   }));
 
-  // 4. Extract Direct Source -> Target (ES/PT) bilingual dictionary terms
   const directSenses = [];
   if (directGtx) {
     if (Array.isArray(directGtx.dict)) {
@@ -802,7 +1252,6 @@ async function buildLocalizedDictionaryData(tokenMeta) {
     }
   }
 
-  // 5. Merge senses (Prioritize grammar accuracy for JA particles, native Jotoba ES, translated specialized dict, and direct GTX)
   const mergedSenses = [];
   const addSenseUnique = (item) => {
     if (!item || !item.gloss) return;
@@ -852,13 +1301,14 @@ function ensureDictInspectBar() {
   if (!btn) {
     const addSpaceBtn = document.getElementById('btn-add-space');
     if (addSpaceBtn && addSpaceBtn.parentNode) {
+      const ui = getAppStrings().boxes;
       btn = document.createElement('button');
       btn.id = 'btn-inspect-dict';
       btn.type = 'button';
-      btn.title = 'Toggle Dictionary (Hover on Desktop / Tap on Mobile)';
+      btn.title = ui.dictTitle;
       btn.innerHTML = `
         <span>📖</span>
-        <span id="btn-inspect-dict-label">Dictionary: OFF</span>
+        <span id="btn-inspect-dict-label">${escapeHtml(isInspectModeActive ? ui.dictOn : ui.dictOff)}</span>
       `;
       addSpaceBtn.parentNode.insertBefore(btn, addSpaceBtn);
 
@@ -881,10 +1331,11 @@ function setInspectMode(enabled) {
 
   const btn = document.getElementById('btn-inspect-dict');
   const label = document.getElementById('btn-inspect-dict-label');
+  const ui = getAppStrings().boxes;
 
   if (btn && label) {
     btn.classList.toggle('inspect-active', isInspectModeActive);
-    label.textContent = isInspectModeActive ? 'Dictionary: ON' : 'Dictionary: OFF';
+    label.textContent = isInspectModeActive ? ui.dictOn : ui.dictOff;
   }
 
   if (isInspectModeActive) {
@@ -1009,7 +1460,6 @@ function positionDictionaryPopover(anchorRect) {
 }
 
 async function triggerTokenDictionaryLookup(tokenEl) {
-  // Strictly disabled on both Desktop and Mobile when Dictionary button is OFF
   if (!tokenEl || !isInspectModeActive) return;
 
   const segIdx = Number(tokenEl.getAttribute('data-seg-idx'));
@@ -1039,7 +1489,7 @@ async function triggerTokenDictionaryLookup(tokenEl) {
         </div>
         <div class="dict-romaji">${escapeHtml(reading)}</div>
       </div>
-      <button type="button" class="dict-close-btn" aria-label="Close dictionary">✕</button>
+      <button type="button" class="dict-close-btn" aria-label="${escapeHtml(langMeta.closeLabel)}">✕</button>
     </div>
     <div class="text-xs text-slate-400 animate-pulse py-1">${escapeHtml(langMeta.searching)}</div>
   `;
@@ -1091,7 +1541,7 @@ async function triggerTokenDictionaryLookup(tokenEl) {
         <div class="dict-romaji">${escapeHtml(dictData.romanization || '')}</div>
         ${badgesHtml ? `<div>${badgesHtml}</div>` : ''}
       </div>
-      <button type="button" class="dict-close-btn" aria-label="Close dictionary">✕</button>
+      <button type="button" class="dict-close-btn" aria-label="${escapeHtml(langMeta.closeLabel)}">✕</button>
     </div>
     ${sensesHtml}
     ${breakdownHtml}
@@ -1119,6 +1569,7 @@ function initDictionaryAndCrossBoxHighlight() {
 
   ensureDictInspectBar();
   ensureDictionaryPopoverElement();
+  applyAppLanguageUI();
 
   const syncEvents = ['select', 'keyup', 'mouseup', 'touchend'];
   syncEvents.forEach((evt) => {
@@ -1171,13 +1622,13 @@ function initDictionaryAndCrossBoxHighlight() {
   document.addEventListener('mousedown', (e) => {
     const pop = document.getElementById('jotoba-dict-popover');
     const dictBtn = document.getElementById('btn-inspect-dict');
-    const langBtn = document.getElementById('btn-dict-lang');
+    const menuWrapper = document.getElementById('app-lang-menu-wrapper');
     if (pop && !pop.classList.contains('hidden')) {
       if (
         !pop.contains(e.target) &&
         (!box1Wrapper || !box1Wrapper.contains(e.target)) &&
         (!dictBtn || !dictBtn.contains(e.target)) &&
-        (!langBtn || !langBtn.contains(e.target))
+        (!menuWrapper || !menuWrapper.contains(e.target))
       ) {
         hideDictionaryPopover();
       }
@@ -1187,13 +1638,13 @@ function initDictionaryAndCrossBoxHighlight() {
   document.addEventListener('touchstart', (e) => {
     const pop = document.getElementById('jotoba-dict-popover');
     const dictBtn = document.getElementById('btn-inspect-dict');
-    const langBtn = document.getElementById('btn-dict-lang');
+    const menuWrapper = document.getElementById('app-lang-menu-wrapper');
     if (pop && !pop.classList.contains('hidden')) {
       if (
         !pop.contains(e.target) &&
         (!box1Wrapper || !box1Wrapper.contains(e.target)) &&
         (!dictBtn || !dictBtn.contains(e.target)) &&
-        (!langBtn || !langBtn.contains(e.target))
+        (!menuWrapper || !menuWrapper.contains(e.target))
       ) {
         hideDictionaryPopover();
       }
@@ -1210,7 +1661,7 @@ async function updateRomanization(triggerSuggestions = false, forceSyncBox2 = fa
 
   const text = textOutputBox.value;
   const conversionId = ++currentConversionId;
-  charCount.textContent = `${text.length} char${text.length === 1 ? '' : 's'}`;
+  charCount.textContent = formatCharCountText(text.length);
 
   if (!text) {
     furiganaBackdrop.innerHTML = '';
