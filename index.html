@@ -9,7 +9,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
 
   <!-- Custom Styles -->
-  <link rel="stylesheet" href="src/css/styles.css" />
+  <link rel="stylesheet" src="src/css/styles.css" href="src/css/styles.css" />
 
   <!-- Japanese Morphological & Furigana/Romaji Engine (Kuroshiro + Kuromoji) -->
   <script src="https://cdn.jsdelivr.net/npm/kuroshiro@1.2.0/dist/kuroshiro.min.js"></script>
@@ -104,10 +104,10 @@
       </div>
     </section>
 
-    <!-- Dual Output Boxes (Box 1: Characters + Furigana, Box 2: Writable Romanization) -->
+    <!-- Dual Output Boxes (Box 1: Characters + Token/Furigana Overlay, Box 2: Writable Romanization) -->
     <section class="dual-boxes-grid">
-      <!-- Box 1: Original Script + Japanese Furigana Overlay -->
-      <div class="box-card bg-white rounded-2xl border border-slate-200/90 shadow-xs p-3 sm:p-4 flex flex-col transition-colors duration-150">
+      <!-- Box 1: Original Script + Token/Furigana Overlay -->
+      <div class="box-card box1-card dict-visible bg-white rounded-2xl border border-slate-200/90 shadow-xs p-3 sm:p-4 flex flex-col transition-colors duration-150">
         <div class="box-card-header flex items-center justify-between gap-2 mb-2">
           <div class="flex items-center gap-2">
             <h2 class="text-xs sm:text-sm font-semibold text-slate-700">Recognized Text</h2>
@@ -130,7 +130,7 @@
         </div>
 
         <div id="box1-wrapper" class="auto-grow-box relative w-full bg-slate-50/70 border border-slate-200 rounded-xl overflow-hidden transition-colors duration-150">
-          <div id="furigana-backdrop" aria-hidden="true" class="box1-shared-metrics absolute inset-0 w-full h-full text-slate-800 pointer-events-none select-none overflow-hidden"></div>
+          <div id="furigana-backdrop" lang="ja" aria-hidden="true" class="box1-shared-metrics absolute inset-0 w-full h-full text-slate-800 pointer-events-none select-none overflow-hidden"></div>
           <textarea id="text-output-box" lang="ja" rows="2" spellcheck="false" class="box1-shared-metrics auto-grow-box overlay-ja-active relative z-10 w-full h-full bg-transparent text-slate-800 focus:outline-none resize-none"></textarea>
         </div>
 
@@ -171,11 +171,14 @@
     </div>
   </div>
 
-  <!-- Application Scripts -->
+  <!-- Application Scripts (4 Language Modules + Shared Coordinators) -->
   <script src="src/js/config-dictionaries.js"></script>
+  <script src="src/js/lang-ja.js"></script>
+  <script src="src/js/lang-zh.js"></script>
+  <script src="src/js/lang-ko.js"></script>
+  <script src="src/js/lang-ru.js"></script>
   <script src="src/js/romanizer.js"></script>
   <script src="src/js/canvas-handwriting.js"></script>
-  <script src="src/js/ime-writable.js"></script>
   <script src="src/js/main.js"></script>
 </body>
 </html>
