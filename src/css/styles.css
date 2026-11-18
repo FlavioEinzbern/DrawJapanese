@@ -5,7 +5,7 @@
   --app-height: 100svh;
 }
 
-/* Base typography metrics (Japanese Box 1 + Furigana Backdrop) */
+/* Base typography metrics (Japanese Box 1 + Token/Furigana Backdrop) */
 .box1-shared-metrics {
   font-family: 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', ui-monospace, SFMono-Regular, monospace;
   font-size: 1.35rem;
@@ -19,23 +19,26 @@
   tab-size: 4;
 }
 
-/* Shorter line spacing for Chinese, Korean, Russian in Box 1 and all languages in Box 2 */
+/* Shorter line spacing for Chinese, Korean, Russian in Box 1 + Backdrop and all languages in Box 2 */
 #text-output-box:not([lang="ja"]),
+#furigana-backdrop:not([lang="ja"]),
 #romanized-output-box,
 #romanized-backdrop {
   line-height: 1.45;
   padding: 0.55rem 0.65rem;
 }
 
-/* Korean font in Box 1 */
-#text-output-box[lang="ko"] {
+/* Korean font in Box 1 + Backdrop */
+#text-output-box[lang="ko"],
+#furigana-backdrop[lang="ko"] {
   font-family: 'Pretendard Variable', 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
   font-weight: 600;
   letter-spacing: 0.01em;
 }
 
-/* Russian font in Box 1 */
-#text-output-box[lang="ru"] {
+/* Russian font in Box 1 + Backdrop */
+#text-output-box[lang="ru"],
+#furigana-backdrop[lang="ru"] {
   font-family: 'Inter', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
   font-weight: 500;
   letter-spacing: normal;
@@ -54,7 +57,7 @@
   display: none;
 }
 
-/* Japanese Furigana overlay in Box 1 */
+/* Token & Furigana overlay in Box 1 (Active for all 4 languages so tokens can be hovered/tapped) */
 #text-output-box.overlay-ja-active {
   color: transparent;
   caret-color: #1e293b;
@@ -200,7 +203,7 @@ body.inspect-mode-active #box1-wrapper {
   box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.35);
 }
 
-/* Jotoba Rikaichamp/Yomitan-Style Floating Popover */
+/* Multi-Language Rikaichamp/Yomitan-Style Floating Popover */
 #jotoba-dict-popover {
   position: fixed;
   z-index: 60;
@@ -732,6 +735,7 @@ body.dark-mode .cyrillic-grid {
     padding: 0.4rem 0.5rem 0.15rem 0.5rem;
   }
   #text-output-box:not([lang="ja"]),
+  #furigana-backdrop:not([lang="ja"]),
   #romanized-output-box,
   #romanized-backdrop {
     line-height: 1.3;
@@ -821,7 +825,8 @@ body.canvas-expanded #furigana-backdrop {
   padding: 0.5rem 0.5rem 0.1rem 0.5rem !important;
 }
 
-body.canvas-expanded #text-output-box:not([lang="ja"]) {
+body.canvas-expanded #text-output-box:not([lang="ja"]),
+body.canvas-expanded #furigana-backdrop:not([lang="ja"]) {
   line-height: 1.5 !important;
   padding: 0.35rem 0.5rem !important;
 }
