@@ -6,10 +6,44 @@ let alignedSegments = [];
 let imeSuggestRequestId = 0;
 let isInspectModeActive = false;
 let activeHoveredSegIdx = null;
+let lastInspectedTokenEl = null;
 let dictHoverHideTimer = null;
 let dictLookupRequestId = 0;
 let isDictAndHighlightInitialized = false;
 let currentConversionId = 0;
+
+/* Dictionary Target Language State ('en' | 'es' | 'pt') & Hybrid Cache */
+const DICT_TARGET_LANGS = ['en', 'es', 'pt'];
+const DICT_TARGET_META = {
+  en: {
+    code: 'EN',
+    name: 'English',
+    searching: 'Searching dictionary...',
+    notFound: 'No exact entry found for'
+  },
+  es: {
+    code: 'ES',
+    name: 'Español',
+    searching: 'Buscando en el diccionario...',
+    notFound: 'No se encontró entrada exacta para'
+  },
+  pt: {
+    code: 'PT',
+    name: 'Português',
+    searching: 'Pesquisando no dicionário...',
+    notFound: 'Nenhuma entrada exata encontrada para'
+  }
+};
+
+let dictTargetLang = (() => {
+  try {
+    const saved = localStorage.getItem('dictTargetLang');
+    if (saved && DICT_TARGET_LANGS.includes(saved)) return saved;
+  } catch (_) {}
+  return 'en';
+})();
+
+const HYBRID_DICT_LANG_CACHE = new Map();
 
 const NUMBER_SPLIT_REGEX = /([0-9０-９]+|[零〇一二两三四五六七八九十百千万億亿]+)/g;
 const IS_NUMBER_TOKEN_REGEX = /^([0-9０-９]+|[零〇一二两三四五六七八九十百千万億亿]+)$/;
@@ -442,9 +476,373 @@ function applyImeSuggestion(suggestion, replaceRange) {
 }
 
 /* ==========================================================================
+   Option 2 + UI Option B: Top Header EN/ES/PT Selector & Hybrid Translator
+   ========================================================================== */
+function ensureDictLangHeaderButton() {
+  if (!document.getElementById('dict-lang-btn-styles')) {
+    const styleEl = document.createElement('style');
+    styleEl.id = 'dict-lang-btn-styles';
+    styleEl.textContent = `
+      body.dark-mode #btn-dict-lang {
+        background-color: #334155;
+        border-color: #475569;
+        color: #e2e8f0;
+      }
+      body.dark-mode #btn-dict-lang:hover {
+        background-color: #475569;
+        color: #ffffff;
+      }
+    `;
+    document.head.appendChild(styleEl);
+  }
+
+  let btn = document.getElementById('btn-dict-lang');
+  if (!btn) {
+    const themeBtn = document.getElementById('btn-theme-toggle');
+    if (themeBtn && themeBtn.parentNode) {
+      btn = document.createElement('button');
+      btn.id = 'btn-dict-lang';
+      btn.type = 'button';
+      btn.className = 'px-2.5 py-1 rounded-full border border-slate-200 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-all flex items-center gap-1 shrink-0 select-none';
+
+      btn.addEventListener('mousedown', (e) => e.stopPropagation());
+      btn.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const currIdx = DICT_TARGET_LANGS.indexOf(dictTargetLang);
+        dictTargetLang = DICT_TARGET_LANGS[(currIdx + 1) % DICT_TARGET_LANGS.length];
+        try {
+          localStorage.setItem('dictTargetLang', dictTargetLang);
+        } catch (_) {}
+
+        updateDictLangHeaderButtonUI();
+
+        const meta = DICT_TARGET_META[dictTargetLang] || DICT_TARGET_META.en;
+        if (typeof showToast === 'function') {
+          showToast(`Dictionary language: ${meta.name} (${meta.code})`);
+        }
+
+        // If a dictionary popover is currently open, immediately re-translate it in place
+        const pop = document.getElementById('jotoba-dict-popover');
+        if (pop && !pop.classList.contains('hidden') && lastInspectedTokenEl && document.body.contains(lastInspectedTokenEl)) {
+          triggerTokenDictionaryLookup(lastInspectedTokenEl);
+        }
+      });
+
+      themeBtn.parentNode.insertBefore(btn, themeBtn);
+    }
+  }
+
+  updateDictLangHeaderButtonUI();
+}
+
+function updateDictLangHeaderButtonUI() {
+  const btn = document.getElementById('btn-dict-lang');
+  if (!btn) return;
+  const meta = DICT_TARGET_META[dictTargetLang] || DICT_TARGET_META.en;
+  btn.innerHTML = `<span>🌐</span><span>${meta.code}</span>`;
+  btn.title = `Dictionary Language: ${meta.name} (Click to switch EN / ES / PT)`;
+  btn.setAttribute('aria-label', `Dictionary Language: ${meta.name}`);
+}
+
+const POS_LABEL_TRANSLATIONS = {
+  es: {
+    'noun': 'sustantivo',
+    'verb': 'verbo',
+    'adjective': 'adjetivo',
+    'adverb': 'adverbio',
+    'pronoun': 'pronombre',
+    'particle': 'partícula',
+    'conjunction': 'conjunción',
+    'interjection': 'interjección',
+    'expression': 'expresión',
+    'numeral': 'numeral',
+    'phrase': 'frase',
+    'proper noun': 'nombre propio'
+  },
+  pt: {
+    'noun': 'substantivo',
+    'verb': 'verbo',
+    'adjective': 'adjetivo',
+    'adverb': 'advérbio',
+    'pronoun': 'pronome',
+    'particle': 'partícula',
+    'conjunction': 'conjunção',
+    'interjection': 'interjeição',
+    'expression': 'expressão',
+    'numeral': 'numeral',
+    'phrase': 'frase',
+    'proper noun': 'nome próprio'
+  }
+};
+
+function localizePosTag(posStr, targetLang) {
+  if (!posStr || targetLang === 'en') return posStr;
+  const table = POS_LABEL_TRANSLATIONS[targetLang];
+  if (!table) return posStr;
+  const lower = posStr.trim().toLowerCase();
+  return table[lower] || posStr;
+}
+
+function localizeBadgeLabel(badgeStr, targetLang) {
+  if (!badgeStr || targetLang === 'en') return badgeStr;
+  if (targetLang === 'es') {
+    return badgeStr
+      .replace(/^Root:\s*/i, 'Raíz: ')
+      .replace(/^Common$/i, 'Común')
+      .replace(/^Level\s+/i, 'Nivel ')
+      .replace(/^Gender:\s*/i, 'Género: ')
+      .replace(/^Aspect:\s*/i, 'Aspecto: ');
+  }
+  if (targetLang === 'pt') {
+    return badgeStr
+      .replace(/^Root:\s*/i, 'Raiz: ')
+      .replace(/^Common$/i, 'Comum')
+      .replace(/^Level\s+/i, 'Nível ')
+      .replace(/^Gender:\s*/i, 'Gênero: ')
+      .replace(/^Aspect:\s*/i, 'Aspecto: ');
+  }
+  return badgeStr;
+}
+
+/* Direct Source -> Target (ES/PT) Google GTX Bilingual Dictionary Lookup */
+async function fetchDirectTargetGtxBilingual(sourceLang, word, targetLang, timeoutMs = 2200) {
+  const slMap = { ja: 'ja', zh: 'zh-CN', ko: 'ko', ru: 'ru' };
+  const sl = slMap[sourceLang] || sourceLang;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(sl)}&tl=${encodeURIComponent(targetLang)}&dt=bd&dt=t&dj=1&q=${encodeURIComponent(word)}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      mode: 'cors',
+      credentials: 'omit',
+      signal: controller.signal
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/* Direct Jotoba Native Spanish Lookup for Japanese (when dictTargetLang === 'es') */
+async function fetchJotobaSpanishSenses(surface, basicForm, readingHira, pos, timeoutMs = 2400) {
+  const lookupKey = (basicForm && basicForm !== '*') ? basicForm : surface;
+  const targetUrl = 'https://jotoba.de/api/search/words';
+  const bodyPayload = JSON.stringify({
+    query: lookupKey,
+    language: 'Spanish',
+    no_english: true
+  });
+
+  const urls = [
+    targetUrl,
+    `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
+  ];
+
+  for (const url of urls) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        mode: 'cors',
+        credentials: 'omit',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: bodyPayload,
+        signal: controller.signal
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const words = (data && Array.isArray(data.words)) ? data.words : [];
+      if (words.length === 0) return [];
+
+      const best = typeof selectBestJotobaWordEntry === 'function'
+        ? selectBestJotobaWordEntry(words, surface, lookupKey, readingHira, pos)
+        : words[0];
+
+      if (!best || !Array.isArray(best.senses)) return [];
+      const out = [];
+      for (const sense of best.senses.slice(0, 4)) {
+        const gloss = Array.isArray(sense.glosses) ? sense.glosses.join(', ') : '';
+        const posList = Array.isArray(sense.pos) && typeof formatJotobaPosTag === 'function'
+          ? sense.pos.map(formatJotobaPosTag).filter(Boolean).slice(0, 2).join(', ')
+          : '';
+        if (gloss) {
+          out.push({ pos: localizePosTag(posList, 'es'), gloss });
+        }
+      }
+      return out;
+    } catch (_) {
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return [];
+}
+
+/* Batched Post-Lookup Translator (EN -> ES / PT) for Specialized Glosses & Character Cards */
+async function translateBatchEnToTarget(stringsArray, targetLang, timeoutMs = 2200) {
+  if (!Array.isArray(stringsArray) || stringsArray.length === 0 || targetLang === 'en') {
+    return stringsArray;
+  }
+
+  const joined = stringsArray.map(s => String(s || '').replace(/\r?\n/g, ' ')).join('\n');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${encodeURIComponent(targetLang)}&dt=t&dj=1&q=${encodeURIComponent(joined)}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      mode: 'cors',
+      credentials: 'omit',
+      signal: controller.signal
+    });
+    if (!res.ok) return stringsArray;
+    const data = await res.json();
+    if (!data || !Array.isArray(data.sentences)) return stringsArray;
+
+    const fullTrans = data.sentences.map(s => (s && s.trans) ? s.trans : '').join('');
+    const splitLines = fullTrans.split('\n').map(s => s.trim());
+
+    return stringsArray.map((orig, idx) => splitLines[idx] || orig);
+  } catch (_) {
+    return stringsArray;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/* Option 2 Hybrid Coordinator: Combines Base Specialized Dict + Direct Target Dict + Batch Translation */
+async function buildLocalizedDictionaryData(tokenMeta) {
+  const { surface, basic, reading, pos, posDetail } = tokenMeta;
+  const targetLang = dictTargetLang;
+  const cacheKey = `${currentLang}|${targetLang}|${surface}|${basic}|${reading}|${pos}`;
+
+  if (HYBRID_DICT_LANG_CACHE.has(cacheKey)) {
+    return HYBRID_DICT_LANG_CACHE.get(cacheKey);
+  }
+
+  // 1. Fetch structural base dictionary entry (Jotoba / CC-CEDICT / Direct-CORS KO / OpenRussian)
+  let baseData = null;
+  if (currentLang === 'ja') {
+    baseData = await lookupJapaneseTokenDict(tokenMeta);
+  } else if (currentLang === 'zh') {
+    baseData = await lookupChineseTokenDict(tokenMeta);
+  } else if (currentLang === 'ko') {
+    baseData = await lookupKoreanTokenDict(tokenMeta);
+  } else if (currentLang === 'ru') {
+    baseData = await lookupRussianTokenDict(tokenMeta);
+  }
+
+  if (!baseData) return null;
+
+  if (targetLang === 'en') {
+    HYBRID_DICT_LANG_CACHE.set(cacheKey, baseData);
+    return baseData;
+  }
+
+  // 2. Prepare batch of English specialized senses & character breakdown titles for translation
+  const baseSenses = Array.isArray(baseData.senses) ? baseData.senses : [];
+  const baseBreakdowns = Array.isArray(baseData.charBreakdown) ? baseData.charBreakdown : [];
+
+  const batchInputs = [
+    ...baseSenses.map(s => s.gloss || ''),
+    ...baseBreakdowns.map(c => c.title || '')
+  ];
+
+  const isJaGrammarToken = currentLang === 'ja' && typeof resolveLocalGrammarEntry === 'function'
+    && Boolean(resolveLocalGrammarEntry(surface, basic, pos, posDetail));
+
+  const queryTerm = (basic && basic !== '*') ? basic : surface;
+
+  // 3. Run Direct Source -> Target (ES/PT) lookup + Jotoba Spanish (if JA+ES) + Batch EN->ES/PT in parallel
+  const [translatedBatch, directGtx, jotobaEsSenses] = await Promise.all([
+    batchInputs.length > 0 ? translateBatchEnToTarget(batchInputs, targetLang) : Promise.resolve([]),
+    !isJaGrammarToken ? fetchDirectTargetGtxBilingual(currentLang, queryTerm, targetLang) : Promise.resolve(null),
+    (currentLang === 'ja' && targetLang === 'es' && !isJaGrammarToken)
+      ? fetchJotobaSpanishSenses(surface, basic, reading, pos)
+      : Promise.resolve([])
+  ]);
+
+  const translatedSenses = baseSenses.map((s, idx) => ({
+    pos: localizePosTag(s.pos || '', targetLang),
+    gloss: translatedBatch[idx] || s.gloss
+  }));
+
+  const translatedBreakdowns = baseBreakdowns.map((c, idx) => ({
+    ...c,
+    title: translatedBatch[baseSenses.length + idx] || c.title
+  }));
+
+  // 4. Extract Direct Source -> Target (ES/PT) bilingual dictionary terms
+  const directSenses = [];
+  if (directGtx) {
+    if (Array.isArray(directGtx.dict)) {
+      for (const d of directGtx.dict.slice(0, 3)) {
+        const dPos = localizePosTag(d.pos || '', targetLang);
+        const gloss = Array.isArray(d.terms) ? d.terms.slice(0, 4).join(', ') : '';
+        if (gloss) {
+          directSenses.push({ pos: dPos, gloss });
+        }
+      }
+    }
+    if (directSenses.length === 0 && Array.isArray(directGtx.sentences) && directGtx.sentences[0] && directGtx.sentences[0].trans) {
+      directSenses.push({ pos: '', gloss: directGtx.sentences[0].trans });
+    }
+  }
+
+  // 5. Merge senses (Prioritize grammar accuracy for JA particles, native Jotoba ES, translated specialized dict, and direct GTX)
+  const mergedSenses = [];
+  const addSenseUnique = (item) => {
+    if (!item || !item.gloss) return;
+    const norm = item.gloss.trim().toLowerCase();
+    if (!norm) return;
+    if (!mergedSenses.some(existing => existing.gloss.trim().toLowerCase() === norm)) {
+      mergedSenses.push(item);
+    }
+  };
+
+  if (isJaGrammarToken) {
+    translatedSenses.forEach(addSenseUnique);
+  } else {
+    jotobaEsSenses.forEach(addSenseUnique);
+    translatedSenses.forEach(addSenseUnique);
+    directSenses.forEach(addSenseUnique);
+  }
+
+  const localizedBadges = [
+    ...(Array.isArray(baseData.badges) ? baseData.badges.map(b => localizeBadgeLabel(b, targetLang)) : []),
+    DICT_TARGET_META[targetLang].code
+  ];
+
+  const localizedResult = {
+    ...baseData,
+    badges: localizedBadges,
+    senses: mergedSenses.slice(0, 4),
+    charBreakdown: translatedBreakdowns
+  };
+
+  HYBRID_DICT_LANG_CACHE.set(cacheKey, localizedResult);
+  return localizedResult;
+}
+
+/* ==========================================================================
    Unified Multi-Language Dictionary Popover & Cross-Box Highlighting
    ========================================================================== */
 function ensureDictInspectBar() {
+  ensureDictLangHeaderButton();
+
   const box1Card = box1Wrapper ? box1Wrapper.closest('.box-card') : null;
   if (box1Card) {
     box1Card.classList.add('box1-card', 'dict-visible');
@@ -522,6 +920,7 @@ function ensureDictionaryPopoverElement() {
 function hideDictionaryPopover() {
   clearTimeout(dictHoverHideTimer);
   activeHoveredSegIdx = null;
+  lastInspectedTokenEl = null;
   const pop = document.getElementById('jotoba-dict-popover');
   if (pop) {
     pop.classList.add('hidden');
@@ -624,11 +1023,13 @@ async function triggerTokenDictionaryLookup(tokenEl) {
 
   clearTimeout(dictHoverHideTimer);
   activeHoveredSegIdx = segIdx;
+  lastInspectedTokenEl = tokenEl;
   syncBox1SelectionToBox2();
 
   const reqId = ++dictLookupRequestId;
   const pop = ensureDictionaryPopoverElement();
   const anchorRect = tokenEl.getBoundingClientRect();
+  const langMeta = DICT_TARGET_META[dictTargetLang] || DICT_TARGET_META.en;
 
   pop.innerHTML = `
     <div class="dict-popover-header">
@@ -640,24 +1041,14 @@ async function triggerTokenDictionaryLookup(tokenEl) {
       </div>
       <button type="button" class="dict-close-btn" aria-label="Close dictionary">✕</button>
     </div>
-    <div class="text-xs text-slate-400 animate-pulse py-1">Searching dictionary...</div>
+    <div class="text-xs text-slate-400 animate-pulse py-1">${escapeHtml(langMeta.searching)}</div>
   `;
   pop.querySelector('.dict-close-btn').addEventListener('click', hideDictionaryPopover);
   pop.classList.remove('hidden');
   positionDictionaryPopover(anchorRect);
 
   const tokenMeta = { surface, basic, reading, pos, posDetail };
-  let dictData = null;
-
-  if (currentLang === 'ja') {
-    dictData = await lookupJapaneseTokenDict(tokenMeta);
-  } else if (currentLang === 'zh') {
-    dictData = await lookupChineseTokenDict(tokenMeta);
-  } else if (currentLang === 'ko') {
-    dictData = await lookupKoreanTokenDict(tokenMeta);
-  } else if (currentLang === 'ru') {
-    dictData = await lookupRussianTokenDict(tokenMeta);
-  }
+  const dictData = await buildLocalizedDictionaryData(tokenMeta);
 
   if (reqId !== dictLookupRequestId || !isInspectModeActive || !dictData) return;
 
@@ -673,7 +1064,7 @@ async function triggerTokenDictionaryLookup(tokenEl) {
     }).join('');
     sensesHtml = `<ol class="dict-senses-list">${items}</ol>`;
   } else {
-    sensesHtml = `<div class="text-xs opacity-75 py-0.5">No exact entry found for ${escapeHtml(surface)}.</div>`;
+    sensesHtml = `<div class="text-xs opacity-75 py-0.5">${escapeHtml(langMeta.notFound)} ${escapeHtml(surface)}.</div>`;
   }
 
   let breakdownHtml = '';
@@ -780,8 +1171,14 @@ function initDictionaryAndCrossBoxHighlight() {
   document.addEventListener('mousedown', (e) => {
     const pop = document.getElementById('jotoba-dict-popover');
     const dictBtn = document.getElementById('btn-inspect-dict');
+    const langBtn = document.getElementById('btn-dict-lang');
     if (pop && !pop.classList.contains('hidden')) {
-      if (!pop.contains(e.target) && (!box1Wrapper || !box1Wrapper.contains(e.target)) && (!dictBtn || !dictBtn.contains(e.target))) {
+      if (
+        !pop.contains(e.target) &&
+        (!box1Wrapper || !box1Wrapper.contains(e.target)) &&
+        (!dictBtn || !dictBtn.contains(e.target)) &&
+        (!langBtn || !langBtn.contains(e.target))
+      ) {
         hideDictionaryPopover();
       }
     }
@@ -790,8 +1187,14 @@ function initDictionaryAndCrossBoxHighlight() {
   document.addEventListener('touchstart', (e) => {
     const pop = document.getElementById('jotoba-dict-popover');
     const dictBtn = document.getElementById('btn-inspect-dict');
+    const langBtn = document.getElementById('btn-dict-lang');
     if (pop && !pop.classList.contains('hidden')) {
-      if (!pop.contains(e.target) && (!box1Wrapper || !box1Wrapper.contains(e.target)) && (!dictBtn || !dictBtn.contains(e.target))) {
+      if (
+        !pop.contains(e.target) &&
+        (!box1Wrapper || !box1Wrapper.contains(e.target)) &&
+        (!dictBtn || !dictBtn.contains(e.target)) &&
+        (!langBtn || !langBtn.contains(e.target))
+      ) {
         hideDictionaryPopover();
       }
     }
