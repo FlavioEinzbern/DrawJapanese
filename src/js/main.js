@@ -107,7 +107,7 @@ function autoResizeBoxes() {
   const box1ContentHeight = Math.max(
     minHeightPx,
     textOutputBox.scrollHeight,
-    currentLang === 'ja' ? furiganaBackdrop.scrollHeight : 0
+    furiganaBackdrop.scrollHeight
   );
 
   const box2ContentHeight = Math.max(
@@ -249,13 +249,9 @@ tabs.forEach(tab => {
     translitDesc.textContent = langConfig.desc;
 
     textOutputBox.setAttribute('lang', currentLang);
-    if (currentLang === 'ja') {
-      textOutputBox.classList.add('overlay-ja-active');
-      furiganaBackdrop.classList.remove('hidden');
-    } else {
-      textOutputBox.classList.remove('overlay-ja-active');
-      furiganaBackdrop.classList.add('hidden');
-    }
+    furiganaBackdrop.setAttribute('lang', currentLang);
+    textOutputBox.classList.add('overlay-ja-active');
+    furiganaBackdrop.classList.remove('hidden');
 
     if (langConfig.guideType === 'cyrillic') {
       gridGuide.className = 'absolute inset-0 cyrillic-grid pointer-events-none';
@@ -263,6 +259,9 @@ tabs.forEach(tab => {
       gridGuide.className = 'absolute inset-0 cjk-grid pointer-events-none';
     }
 
+    if (typeof hideDictionaryPopover === 'function') {
+      hideDictionaryPopover();
+    }
     clearCanvas();
     updateRomanization(false, true);
   });
