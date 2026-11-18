@@ -257,7 +257,7 @@ function buildKuromojiReadingIndex(analyzer) {
 }
 
 const HIGH_FREQ_HANZI_SEED =
-  '的一是在不了有和人这中大为上个国我以要他时来用们生到作地于出就分对成会可主发年动同工也能下过子说产种面而方后多定行学法所民得经十三之进着等部度家电力里如水化高自二理起小物现实加量都两体制机当使点从业本去把性好应开它合还因由其些然前外天政四日那社义事平形相全表间样与关各重新线内数正心反你明看原又么利比或但质气第向道命此变条只没结解问意建月公无系军很情者最立代想已通并提直题党程展五果料象员革位入常文总次品式活设及管特件长求老头基资边流路级少图山统接知较将组见计别她手角期根论运农指几九区强放决西被干做必战先回则任取据处队南给色光门即保治北造百规热领七海口东导器压志世金增争济阶油思术极交受联什认六共权收证改清己美再采转更单风切打白教速花带安场身车例真务具万每目至达走积示议声报斗完类八离华名确才科张信马节话米整空元况今集温传土许步群广石记需段研界拉林律叫且究观越织装影算低持音众书布复容儿须际商非验连断深难近矿千周委素技备半办青省列习响约支般史感劳便团往酸历市克何除消构太准精值号率族维划选标写存候毛亲快效斯院查江型眼王按格养易置派层片始却专状育厂京识适属圆包火住调满县局照参红细引听该铁价严首底液官德随病苏失尔死讲配女黄推显谈罪神艺呢吗妈麻骂码爸吧把八百北不吃茶车城出穿船床吹春词次从错打大但当到道得等点电店东懂动都读短对多饿儿二发饭方房放飞非分风服附父刚高哥歌个给跟更工公共狗古故刮关观光广贵国果过还海孩汉好号喝和河贺黑很红后候湖虎花画化话欢还换黄回会活火机鸡级极急几己记既家假价间见件健江讲交角脚叫觉姐解借今斤金进近京经景静九酒就旧局举句具剧决绝军开看康考棵科咳可渴克刻客空孔口哭苦库裤块快宽况矿困拉啦来蓝篮兰拦烂郎朗浪捞劳老乐雷累冷离梨礼李里理力历立丽利例连联脸练凉两亮谅辆聊林零领流留六龙楼路旅绿乱妈麻马骂吗慢忙毛冒么没眉梅美妹门闷们梦米迷秘蜜眠民敏名明鸣命摸模膜摩磨蘑魔抹末莫墨默谋某母亩木目牧拿哪那内男南难囊呢内嫩能你泥年中飯';
+  '的一是在不了有和人这中大为上个国我以要他时来用们生到作地于出就分对成会可主发年动同工也能下过子说产种面而方后多定行学法所民得经十三之进着等部度家电力里如水化高自二理起小物现实加量都两体制机当使点从业本去把性好应开它合还因由其些然前外天政四日那社义事平形相全表间样与关各重新线内数正心反你明看原又么利比或但质气第向道命此变条只没结解问意建月公无系军很情者最立代想已通并提直题党程展五果料象员革位入常文总次品式活设及管特件长求老头基资边流路级少图山统接知较将组见计别她手角期根论运农指几九区强放决西被干做必战先回则任取据处队南给色光门即保治北造百规热领七海口东导器压志世金增争济阶油思术极交受联什认六共权收证改清己美再采转更单风切打白教速花带安场身车例真务具万每目至达走积示议声报斗完类八离华名确才科张信马节话米整空元况今集温传土许步群广石记需段研界拉林律叫且究观越织装影算低持音众书布复容儿须际商非验连断深难近矿千周委素技备半办青省列习响约支般史感劳便团往酸历市克何除消构太准精值号率族维划选标写存候毛亲快效斯院查江型眼王按格养易置派层片始却专状育厂京识适属圆包火住调满县局照参红细引听该铁价严首底液官德随病苏失尔死讲配女黄推显谈罪神艺呢吗妈麻骂码爸吧把八百北不吃茶车城出穿船床吹春词次从错打大但当到道得等点电店东懂动都读短对多饿儿二发饭方房放飞非分风服附父刚高哥歌个给跟更工公共狗古故刮关观光广贵国果过还海孩汉好号喝和河贺黑很红后候湖虎花画化话欢还换黄回会活火机鸡级极急几己记既家假价间见件健江讲交角脚叫觉姐解借今斤金进近京经景静九酒就旧局举句具剧决绝军开看康考棵科咳可渴克刻客空孔口哭苦库裤块快宽况矿困拉啦来蓝篮兰拦烂郎朗浪捞劳老乐雷累冷离梨礼李里理力历立丽利例连联脸练凉两亮谅辆聊林零领流留六龙楼路旅绿乱妈麻马骂吗慢忙毛冒么没眉梅美妹门闷们梦米迷秘蜜眠民敏名明鸣命摸模膜摩磨蘑蘑魔抹末莫墨默谋某母亩木目牧拿哪那内男南难囊呢内嫩能你泥年中飯';
 
 function addHanziToPinyinIndex(ch) {
   if (typeof pinyinPro === 'undefined' || !pinyinPro.pinyin) return;
@@ -473,7 +473,7 @@ async function convertTokensWithKuroshiro(tokens, options) {
 
 /*
  * Build Furigana HTML with per-token <span class="box1-token" data-seg-idx="..."> wrappers
- * so mouse-over, mobile Inspect Mode taps, and cross-box selection highlights map 1:1.
+ * including Kuromoji's POS & POS detail attributes for Option 1 grammar-synced lookups.
  */
 async function buildFuriganaHtmlFromTokens(tokens) {
   let html = '';
@@ -522,9 +522,13 @@ async function buildFuriganaHtmlFromTokens(tokens) {
       html += innerHtml;
     } else {
       const basic = (tok.basic_form && tok.basic_form !== '*') ? tok.basic_form : surf;
-      const readHira = katakanaToHiragana(tok.reading || surf);
+      const pronOrRead = (tok._isParticleWa || tok._isParticleE)
+        ? (tok.pronunciation || tok.reading || surf)
+        : (tok.reading || surf);
+      const readHira = katakanaToHiragana(pronOrRead);
       const pos = tok.pos || '';
-      html += `<span class="box1-token" data-seg-idx="${idx}" data-surface="${escapeHtml(surf)}" data-basic="${escapeHtml(basic)}" data-reading="${escapeHtml(readHira)}" data-pos="${escapeHtml(pos)}">${innerHtml}</span>`;
+      const posDetail = tok.pos_detail_1 || '';
+      html += `<span class="box1-token" data-seg-idx="${idx}" data-surface="${escapeHtml(surf)}" data-basic="${escapeHtml(basic)}" data-reading="${escapeHtml(readHira)}" data-pos="${escapeHtml(pos)}" data-pos-detail="${escapeHtml(posDetail)}">${innerHtml}</span>`;
     }
   }
 
@@ -587,7 +591,8 @@ async function buildJapaneseAlignedSegments(tokens) {
       end,
       basic: (tok.basic_form && tok.basic_form !== '*') ? tok.basic_form : src,
       reading: katakanaToHiragana(tok.reading || src),
-      pos: tok.pos || ''
+      pos: tok.pos || '',
+      posDetail: tok.pos_detail_1 || ''
     });
   }
   return segs;
@@ -614,7 +619,8 @@ function buildFallbackJapaneseAlignedSegments(text) {
         end,
         basic: ch,
         reading: katakanaToHiragana(ch),
-        pos: ''
+        pos: '',
+        posDetail: ''
       });
     }
     idx++;
@@ -1129,7 +1135,7 @@ function fallbackJapaneseFuriganaHtml(str) {
       ? `<ruby>${escapeHtml(ch)}<rt>${kanjiMatch.kana}</rt></ruby>`
       : escapeHtml(ch);
 
-    html += `<span class="box1-token" data-seg-idx="${segIdx}" data-surface="${escapeHtml(ch)}" data-basic="${escapeHtml(ch)}" data-reading="${escapeHtml(kanjiMatch ? kanjiMatch.kana : ch)}" data-pos="">${inner}</span>`;
+    html += `<span class="box1-token" data-seg-idx="${segIdx}" data-surface="${escapeHtml(ch)}" data-basic="${escapeHtml(ch)}" data-reading="${escapeHtml(kanjiMatch ? kanjiMatch.kana : ch)}" data-pos="" data-pos-detail="">${inner}</span>`;
     i++;
     segIdx++;
   }
@@ -1437,10 +1443,452 @@ async function romanizeNonJapaneseTextAndNumbers(text, lang) {
 }
 
 /* ==========================================================================
-   Jotoba Dictionary Popover (Mouse-Over + Mobile Option C) & Cross-Box Sync
+   Option 1: Kuromoji Grammar/POS Table + Strict Box 1 Surface-Locked Jotoba
    ========================================================================== */
+const JA_GRAMMAR_TOKEN_DICT = {
+  'の': {
+    posLabel: 'Particle (助詞)',
+    senses: [
+      "possessive particle ('s, of)",
+      "nominalizer (turns a verb or clause into a noun: 'the one that...')",
+      "explanatory or question-softening sentence-ending particle"
+    ]
+  },
+  'は': {
+    posLabel: 'Topic Particle (係助詞)',
+    senses: [
+      "topic marker (as for..., speaking of...)",
+      "contrastive marker (at least..., in contrast to...)"
+    ]
+  },
+  'が': {
+    posLabel: 'Particle (格助詞 / 接続助詞)',
+    senses: [
+      "grammatical subject marker",
+      "but / although / however (when linking two clauses)"
+    ]
+  },
+  'を': {
+    posLabel: 'Object Particle (格助詞)',
+    senses: [
+      "direct object marker (indicates the target of an action)",
+      "through / along / departure point (with motion verbs)"
+    ]
+  },
+  'に': {
+    posLabel: 'Particle (格助詞)',
+    senses: [
+      "direction or destination (to, toward)",
+      "location of existence (at, in, on)",
+      "specific point in time (at, on, in)",
+      "indirect object, purpose, or agent (to, for, by)"
+    ]
+  },
+  'へ': {
+    posLabel: 'Direction Particle (格助詞)',
+    senses: [
+      "direction / destination marker (to, toward, headed for)"
+    ]
+  },
+  'で': {
+    posLabel: 'Particle (格助詞)',
+    senses: [
+      "location where an action takes place (at, in)",
+      "means, instrument, or tool (by, with, using)",
+      "reason or cause (because of, due to)"
+    ]
+  },
+  'と': {
+    posLabel: 'Particle (格助詞 / 接続助詞)',
+    senses: [
+      "and / together with (accompaniment)",
+      "quotation marker (that..., '...')",
+      "natural conditional (when, if, whenever)"
+    ]
+  },
+  'も': {
+    posLabel: 'Particle (係助詞)',
+    senses: [
+      "also / too / as well",
+      "both... and... / neither... nor... (when repeated)",
+      "even (emphasis)"
+    ]
+  },
+  'から': {
+    posLabel: 'Particle (格助詞 / 接続助詞)',
+    senses: [
+      "from / since (starting point in time or space)",
+      "because / since (reason or cause)"
+    ]
+  },
+  'まで': {
+    posLabel: 'Particle (副助詞)',
+    senses: [
+      "until / up to / as far as",
+      "even (to the extent of)"
+    ]
+  },
+  'より': {
+    posLabel: 'Particle (格助詞)',
+    senses: [
+      "than / rather than (comparison)",
+      "from (formal starting point)"
+    ]
+  },
+  'だけ': {
+    posLabel: 'Particle (副助詞)',
+    senses: [
+      "only / just / merely",
+      "as much as / to the extent of"
+    ]
+  },
+  'しか': {
+    posLabel: 'Particle (係助詞)',
+    senses: [
+      "only / nothing but (used with a negative verb)"
+    ]
+  },
+  'ばかり': {
+    posLabel: 'Particle (副助詞)',
+    senses: [
+      "only / nothing but / always doing",
+      "just finished doing (after ta-form)",
+      "approximately / about"
+    ]
+  },
+  'ほど': {
+    posLabel: 'Particle (副助詞)',
+    senses: [
+      "to the extent of / degree / about",
+      "the more... the more..."
+    ]
+  },
+  'くらい': {
+    posLabel: 'Particle (副助詞)',
+    senses: [
+      "approximately / about / around",
+      "to the extent that / at least"
+    ]
+  },
+  'ぐらい': {
+    posLabel: 'Particle (副助詞)',
+    senses: [
+      "approximately / about / around",
+      "to the extent that / at least"
+    ]
+  },
+  'など': {
+    posLabel: 'Particle (副助詞)',
+    senses: [
+      "et cetera (etc.) / and so on / such as"
+    ]
+  },
+  'や': {
+    posLabel: 'Particle (並立助詞)',
+    senses: [
+      "and (non-exhaustive list: 'things like A and B')"
+    ]
+  },
+  'か': {
+    posLabel: 'Particle (終助詞 / 副助詞)',
+    senses: [
+      "question marker (at end of sentence)",
+      "or / whether / some-"
+    ]
+  },
+  'ね': {
+    posLabel: 'Sentence Particle (終助詞)',
+    senses: [
+      "isn't it? / right? (seeking agreement or confirmation)",
+      "softens a statement"
+    ]
+  },
+  'よ': {
+    posLabel: 'Sentence Particle (終助詞)',
+    senses: [
+      "you know! / I tell you (adds emphasis or informs listener)"
+    ]
+  },
+  'わ': {
+    posLabel: 'Sentence Particle (終助詞)',
+    senses: [
+      "expressive or emphatic sentence-ending particle"
+    ]
+  },
+  'ぞ': {
+    posLabel: 'Sentence Particle (終助詞)',
+    senses: [
+      "strong assertive / emphatic sentence-ending particle"
+    ]
+  },
+  'ぜ': {
+    posLabel: 'Sentence Particle (終助詞)',
+    senses: [
+      "friendly assertive sentence-ending particle"
+    ]
+  },
+  'て': {
+    posLabel: 'Conjunctive Particle (接続助詞)',
+    senses: [
+      "te-form connector (links actions in sequence, 'and', 'by doing')"
+    ]
+  },
+  'ば': {
+    posLabel: 'Conditional Particle (接続助詞)',
+    senses: [
+      "if / when / provided that (conditional)"
+    ]
+  },
+  'たら': {
+    posLabel: 'Conditional Auxiliary (助動詞)',
+    senses: [
+      "if / when / after doing (conditional)"
+    ]
+  },
+  'なら': {
+    posLabel: 'Conditional Auxiliary (助動詞)',
+    senses: [
+      "if it is the case that / as for"
+    ]
+  },
+  'ながら': {
+    posLabel: 'Conjunctive Particle (接続助詞)',
+    senses: [
+      "while doing (simultaneous actions)",
+      "although / despite"
+    ]
+  },
+  'たり': {
+    posLabel: 'Particle (並立助詞)',
+    senses: [
+      "doing things like A and B (representative actions)"
+    ]
+  },
+  'のに': {
+    posLabel: 'Conjunctive Particle (接続助詞)',
+    senses: [
+      "although / despite / even though",
+      "in order to / for the purpose of"
+    ]
+  },
+  'ので': {
+    posLabel: 'Conjunctive Particle (接続助詞)',
+    senses: [
+      "because / since (polite reason or cause)"
+    ]
+  },
+  'ても': {
+    posLabel: 'Conjunctive Particle (接続助詞)',
+    senses: [
+      "even if / even though"
+    ]
+  },
+  'でも': {
+    posLabel: 'Particle (副助詞 / 接続助詞)',
+    senses: [
+      "even / also / or something",
+      "but / however / even if"
+    ]
+  },
+  'よう': {
+    posLabel: 'Auxiliary / Grammar (助動詞)',
+    senses: [
+      "volitional suffix ('let's...', 'I will...') or supposition ('probably')",
+      "manner / appearance / likeness ('like', 'seems that', 'in order to')"
+    ]
+  },
+  'う': {
+    posLabel: 'Volitional Auxiliary (助動詞)',
+    senses: [
+      "volitional / presumptive suffix ('let's...', 'will probably...')"
+    ]
+  },
+  'まい': {
+    posLabel: 'Negative Volitional (助動詞)',
+    senses: [
+      "will not / probably not / intend not to"
+    ]
+  },
+  'です': {
+    posLabel: 'Polite Copula (助動詞)',
+    senses: [
+      "is / am / are (polite copula)"
+    ]
+  },
+  'だ': {
+    posLabel: 'Plain Copula (助動詞)',
+    senses: [
+      "is / am / are (plain declarative copula)"
+    ]
+  },
+  'ます': {
+    posLabel: 'Polite Auxiliary (助動詞)',
+    senses: [
+      "polite verb suffix (present / future affirmative)"
+    ]
+  },
+  'た': {
+    posLabel: 'Past Auxiliary (助動詞)',
+    senses: [
+      "past tense or completed action suffix (-ed, did)"
+    ]
+  },
+  'ない': {
+    posLabel: 'Negative Auxiliary (助動詞)',
+    senses: [
+      "not / negation suffix (does not, is not)"
+    ]
+  },
+  'ん': {
+    posLabel: 'Auxiliary / Contraction (助動詞)',
+    senses: [
+      "contracted negative suffix (from ぬ, e.g. ません) or explanatory の"
+    ]
+  },
+  'ぬ': {
+    posLabel: 'Negative Auxiliary (助動詞)',
+    senses: [
+      "not / literary negation suffix"
+    ]
+  },
+  'たい': {
+    posLabel: 'Desiderative Auxiliary (助動詞)',
+    senses: [
+      "want to do... (expresses speaker's desire)"
+    ]
+  },
+  'らしい': {
+    posLabel: 'Auxiliary (助動詞)',
+    senses: [
+      "seems like / I heard that / typical of"
+    ]
+  },
+  'そう': {
+    posLabel: 'Auxiliary / Grammar (助動詞語幹)',
+    senses: [
+      "looks like / appears to be (visual impression) or 'I heard that'"
+    ]
+  },
+  'れる': {
+    posLabel: 'Auxiliary Verb (助動詞)',
+    senses: [
+      "passive ('is done'), potential ('can do'), or honorific suffix"
+    ]
+  },
+  'られる': {
+    posLabel: 'Auxiliary Verb (助動詞)',
+    senses: [
+      "passive ('is done'), potential ('can do'), or honorific suffix"
+    ]
+  },
+  'せる': {
+    posLabel: 'Causative Auxiliary (助動詞)',
+    senses: [
+      "causative suffix ('make someone do' / 'let someone do')"
+    ]
+  },
+  'させる': {
+    posLabel: 'Causative Auxiliary (助動詞)',
+    senses: [
+      "causative suffix ('make someone do' / 'let someone do')"
+    ]
+  }
+};
+
+function resolveLocalGrammarEntry(surface, basicForm, pos, posDetail) {
+  if (KANJI_REGEX.test(surface)) return null;
+
+  const isGrammarPos =
+    pos === '助詞' ||
+    pos === '助動詞' ||
+    posDetail === '非自立' ||
+    posDetail === '助動詞語幹' ||
+    posDetail === '接尾';
+
+  if (!isGrammarPos) return null;
+
+  if (JA_GRAMMAR_TOKEN_DICT[surface]) return JA_GRAMMAR_TOKEN_DICT[surface];
+  if (basicForm && JA_GRAMMAR_TOKEN_DICT[basicForm]) return JA_GRAMMAR_TOKEN_DICT[basicForm];
+  return null;
+}
+
+function doesJotobaSenseMatchKuromojiPos(wordEntry, kuromojiPos) {
+  if (!kuromojiPos || !wordEntry || !Array.isArray(wordEntry.senses)) return false;
+  const posTags = wordEntry.senses
+    .flatMap(s => Array.isArray(s.pos) ? s.pos.map(formatJotobaPosTag) : [])
+    .join(' ')
+    .toLowerCase();
+
+  if (kuromojiPos === '動詞') return posTags.includes('verb');
+  if (kuromojiPos === '名詞') return posTags.includes('noun') || posTags.includes('pronoun') || posTags.includes('counter') || posTags.includes('numeric');
+  if (kuromojiPos === '形容詞') return posTags.includes('adjective') || posTags.includes('adjectival');
+  if (kuromojiPos === '副詞') return posTags.includes('adverb');
+  if (kuromojiPos === '連体詞') return posTags.includes('pre-noun') || posTags.includes('adjective');
+  if (kuromojiPos === '接続詞') return posTags.includes('conjunction');
+  if (kuromojiPos === '感動詞') return posTags.includes('interjection') || posTags.includes('expression');
+  return false;
+}
+
+function selectBestJotobaWordEntry(words, surface, basicForm, readingHira, pos) {
+  if (!Array.isArray(words) || words.length === 0) return null;
+
+  const hasKanjiInBox1 = KANJI_REGEX.test(surface);
+  const targetHira = katakanaToHiragana(readingHira || surface);
+  const basicHira = katakanaToHiragana(basicForm || surface);
+
+  let bestWord = null;
+  let bestScore = -9999;
+
+  for (const w of words) {
+    if (!w || !w.reading) continue;
+    let score = 0;
+    const wKanji = w.reading.kanji || '';
+    const wKanaHira = katakanaToHiragana(w.reading.kana || '');
+
+    if (hasKanjiInBox1) {
+      if (wKanji === basicForm || wKanji === surface) {
+        score += 120;
+      } else if (wKanji && (surface.includes(wKanji) || wKanji.includes(surface))) {
+        score += 45;
+      } else {
+        score -= 80;
+      }
+    } else {
+      // Box 1 token is written in Kana: match exact reading and avoid obscure homophone Kanji
+      if (wKanaHira === basicHira || wKanaHira === targetHira) {
+        score += 60;
+      } else {
+        score -= 50;
+      }
+      if (!wKanji) {
+        score += 35;
+      }
+      const sensesJson = JSON.stringify(w.senses || []);
+      if (sensesJson.includes('UsuallyWrittenInKana')) {
+        score += 30;
+      }
+    }
+
+    if (wKanaHira === targetHira || wKanaHira === basicHira) {
+      score += 25;
+    }
+    if (doesJotobaSenseMatchKuromojiPos(w, pos)) {
+      score += 45;
+    }
+    if (w.common) {
+      score += 20;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestWord = w;
+    }
+  }
+
+  return bestWord || words[0];
+}
+
 function ensureDictInspectBar() {
-  // Remove any legacy standalone bar from earlier checkpoints
   const legacyBar = document.getElementById('dict-inspect-bar');
   if (legacyBar && legacyBar.parentNode) {
     legacyBar.parentNode.removeChild(legacyBar);
@@ -1459,7 +1907,7 @@ function ensureDictInspectBar() {
       btn = document.createElement('button');
       btn.id = 'btn-inspect-dict';
       btn.type = 'button';
-      btn.title = 'Toggle Japanese Dictionary Inspect Mode';
+      btn.title = 'Toggle Japanese Dictionary (Hover on Desktop / Tap on Mobile)';
       btn.innerHTML = `
         <span>📖</span>
         <span id="btn-inspect-dict-label">Dictionary: OFF</span>
@@ -1517,9 +1965,7 @@ function ensureDictionaryPopoverElement() {
     clearTimeout(dictHoverHideTimer);
   });
   pop.addEventListener('mouseleave', () => {
-    if (!isInspectModeActive) {
-      scheduleHideDictionaryPopover(180);
-    }
+    scheduleHideDictionaryPopover(180);
   });
   pop.addEventListener('mousedown', (e) => e.stopPropagation());
   pop.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
@@ -1577,7 +2023,7 @@ function applySegmentHighlights(segIndicesSet) {
 function syncBox1SelectionToBox2() {
   const highlighted = new Set();
 
-  if (activeHoveredSegIdx !== null) {
+  if (isInspectModeActive && activeHoveredSegIdx !== null) {
     highlighted.add(Number(activeHoveredSegIdx));
   }
 
@@ -1644,11 +2090,27 @@ function formatJotobaPosTag(posItem) {
   return '';
 }
 
-async function fetchJotobaDictionaryData(surface, basicForm, readingHira) {
+async function fetchJotobaDictionaryData(surface, basicForm, readingHira, pos, posDetail) {
   const lookupKey = (basicForm && basicForm !== '*') ? basicForm : surface;
-  const cacheKey = `${surface}|${lookupKey}`;
+  const cacheKey = `${surface}|${lookupKey}|${readingHira}|${pos}|${posDetail}`;
   if (JOTOBA_WORD_CACHE.has(cacheKey)) {
     return JOTOBA_WORD_CACHE.get(cacheKey);
+  }
+
+  // Option 1: If Kuromoji identifies a Kana token as a particle/auxiliary grammar word, use exact grammar definition
+  const grammarEntry = resolveLocalGrammarEntry(surface, lookupKey, pos, posDetail);
+  if (grammarEntry) {
+    const grammarResult = {
+      surface,
+      basicForm: lookupKey,
+      readingHira,
+      isGrammar: true,
+      grammarEntry,
+      selectedWord: null,
+      kanjiDetails: []
+    };
+    JOTOBA_WORD_CACHE.set(cacheKey, grammarResult);
+    return grammarResult;
   }
 
   const wordData = await postJotobaEndpoint('words', lookupKey);
@@ -1661,6 +2123,9 @@ async function fetchJotobaDictionaryData(surface, basicForm, readingHira) {
     }
   }
 
+  const selectedWord = selectBestJotobaWordEntry(words, surface, lookupKey, readingHira, pos);
+
+  // Only look up Kanji breakdown cards for Kanji characters that actually exist in Box 1's token
   const kanjiChars = [...new Set([...surface].filter(ch => KANJI_REGEX.test(ch)))];
   let kanjiDetails = [];
 
@@ -1713,7 +2178,9 @@ async function fetchJotobaDictionaryData(surface, basicForm, readingHira) {
     surface,
     basicForm: lookupKey,
     readingHira,
-    words: words.slice(0, 3),
+    isGrammar: false,
+    grammarEntry: null,
+    selectedWord,
     kanjiDetails
   };
 
@@ -1746,13 +2213,15 @@ function positionDictionaryPopover(anchorRect) {
 }
 
 async function triggerTokenDictionaryLookup(tokenEl) {
-  if (!tokenEl || currentLang !== 'ja') return;
+  // Strictly disabled on both Desktop and Mobile when Dictionary button is OFF
+  if (!tokenEl || currentLang !== 'ja' || !isInspectModeActive) return;
 
   const segIdx = Number(tokenEl.getAttribute('data-seg-idx'));
   const surface = tokenEl.getAttribute('data-surface') || tokenEl.textContent || '';
   const basic = tokenEl.getAttribute('data-basic') || surface;
   const reading = tokenEl.getAttribute('data-reading') || surface;
   const pos = tokenEl.getAttribute('data-pos') || '';
+  const posDetail = tokenEl.getAttribute('data-pos-detail') || '';
 
   if (!surface.trim()) return;
 
@@ -1762,6 +2231,7 @@ async function triggerTokenDictionaryLookup(tokenEl) {
 
   const reqId = ++dictLookupRequestId;
   const pop = ensureDictionaryPopoverElement();
+  const hasKanjiInSurface = KANJI_REGEX.test(surface);
   const romaji = kanaToRomajiString(katakanaToHiragana(reading));
   const anchorRect = tokenEl.getBoundingClientRect();
 
@@ -1770,57 +2240,63 @@ async function triggerTokenDictionaryLookup(tokenEl) {
       <div>
         <div>
           <span class="dict-headword">${escapeHtml(surface)}</span>
-          <span class="dict-reading">${escapeHtml(reading)}</span>
+          ${hasKanjiInSurface ? `<span class="dict-reading">${escapeHtml(reading)}</span>` : ''}
         </div>
         <div class="dict-romaji">${escapeHtml(romaji)}${basic !== surface ? ` • Root: <strong>${escapeHtml(basic)}</strong>` : ''}</div>
       </div>
       <button type="button" class="dict-close-btn" aria-label="Close dictionary">✕</button>
     </div>
-    <div class="text-xs text-slate-400 animate-pulse py-1">Searching Jotoba dictionary...</div>
+    <div class="text-xs text-slate-400 animate-pulse py-1">Searching dictionary...</div>
   `;
   pop.querySelector('.dict-close-btn').addEventListener('click', hideDictionaryPopover);
   pop.classList.remove('hidden');
   positionDictionaryPopover(anchorRect);
 
-  const data = await fetchJotobaDictionaryData(surface, basic, reading);
-  if (reqId !== dictLookupRequestId) return;
+  const data = await fetchJotobaDictionaryData(surface, basic, reading, pos, posDetail);
+  if (reqId !== dictLookupRequestId || !isInspectModeActive) return;
 
-  const topWord = data.words && data.words[0] ? data.words[0] : null;
-  const displayHead = topWord && topWord.reading
-    ? (topWord.reading.kanji || topWord.reading.kana || surface)
-    : surface;
-  const displayKana = topWord && topWord.reading
-    ? (topWord.reading.kana || reading)
-    : reading;
-  const displayRomaji = kanaToRomajiString(katakanaToHiragana(displayKana));
+  // Option 1: Always lock the displayed headword to the exact Box 1 surface string
+  const displayHead = surface;
+  const displayKana = hasKanjiInSurface ? reading : '';
+  const displayRomaji = kanaToRomajiString(katakanaToHiragana(reading));
 
   let badgesHtml = '';
   if (basic && basic !== surface) {
     badgesHtml += `<span class="dict-badge">Root: ${escapeHtml(basic)}</span>`;
   }
-  if (topWord && topWord.common) {
-    badgesHtml += `<span class="dict-badge">Common</span>`;
-  }
-  if (pos) {
-    badgesHtml += `<span class="dict-badge">${escapeHtml(pos)}</span>`;
-  }
 
   let sensesHtml = '';
-  if (topWord && Array.isArray(topWord.senses) && topWord.senses.length > 0) {
-    const items = topWord.senses.slice(0, 4).map((sense) => {
-      const glosses = Array.isArray(sense.glosses) ? sense.glosses.join(', ') : '';
-      const posList = Array.isArray(sense.pos)
-        ? sense.pos.map(formatJotobaPosTag).filter(Boolean).slice(0, 2).join(', ')
-        : '';
-      return `<li class="dict-sense-item">${posList ? `<span class="opacity-70 text-[11px]">(${escapeHtml(posList)})</span> ` : ''}${escapeHtml(glosses)}</li>`;
-    }).join('');
+  if (data.isGrammar && data.grammarEntry) {
+    badgesHtml += `<span class="dict-badge">${escapeHtml(data.grammarEntry.posLabel)}</span>`;
+    const items = data.grammarEntry.senses
+      .map(s => `<li class="dict-sense-item">${escapeHtml(s)}</li>`)
+      .join('');
     sensesHtml = `<ol class="dict-senses-list">${items}</ol>`;
   } else {
-    sensesHtml = `<div class="text-xs opacity-75 py-0.5">No exact word entry found in Jotoba.</div>`;
+    const topWord = data.selectedWord;
+    if (topWord && topWord.common) {
+      badgesHtml += `<span class="dict-badge">Common</span>`;
+    }
+    if (pos) {
+      badgesHtml += `<span class="dict-badge">${escapeHtml(pos)}</span>`;
+    }
+
+    if (topWord && Array.isArray(topWord.senses) && topWord.senses.length > 0) {
+      const items = topWord.senses.slice(0, 4).map((sense) => {
+        const glosses = Array.isArray(sense.glosses) ? sense.glosses.join(', ') : '';
+        const posList = Array.isArray(sense.pos)
+          ? sense.pos.map(formatJotobaPosTag).filter(Boolean).slice(0, 2).join(', ')
+          : '';
+        return `<li class="dict-sense-item">${posList ? `<span class="opacity-70 text-[11px]">(${escapeHtml(posList)})</span> ` : ''}${escapeHtml(glosses)}</li>`;
+      }).join('');
+      sensesHtml = `<ol class="dict-senses-list">${items}</ol>`;
+    } else {
+      sensesHtml = `<div class="text-xs opacity-75 py-0.5">No exact entry found for ${escapeHtml(surface)}.</div>`;
+    }
   }
 
   let kanjiHtml = '';
-  if (data.kanjiDetails && data.kanjiDetails.length > 0) {
+  if (hasKanjiInSurface && data.kanjiDetails && data.kanjiDetails.length > 0) {
     const cards = data.kanjiDetails.map((k) => {
       const meanings = (k.meanings || []).join(', ');
       const readings = [...(k.onyomi || []), ...(k.kunyomi || [])].slice(0, 4).join(' · ');
@@ -1843,7 +2319,7 @@ async function triggerTokenDictionaryLookup(tokenEl) {
       <div>
         <div>
           <span class="dict-headword">${escapeHtml(displayHead)}</span>
-          <span class="dict-reading">${escapeHtml(displayKana)}</span>
+          ${displayKana ? `<span class="dict-reading">${escapeHtml(displayKana)}</span>` : ''}
         </div>
         <div class="dict-romaji">${escapeHtml(displayRomaji)}</div>
         ${badgesHtml ? `<div>${badgesHtml}</div>` : ''}
@@ -1891,8 +2367,9 @@ function initDictionaryAndCrossBoxHighlight() {
   });
 
   if (box1Wrapper) {
+    // Desktop Mouse-Over: Only active when Dictionary button is ON (isInspectModeActive === true)
     box1Wrapper.addEventListener('mousemove', (e) => {
-      if (currentLang !== 'ja') return;
+      if (currentLang !== 'ja' || !isInspectModeActive) return;
       if (e.buttons !== 0) return;
 
       const hitToken = findBox1TokenAtPoint(e.clientX, e.clientY);
@@ -1903,17 +2380,18 @@ function initDictionaryAndCrossBoxHighlight() {
         } else {
           clearTimeout(dictHoverHideTimer);
         }
-      } else if (!isInspectModeActive && activeHoveredSegIdx !== null) {
+      } else if (activeHoveredSegIdx !== null) {
         scheduleHideDictionaryPopover(180);
       }
     });
 
     box1Wrapper.addEventListener('mouseleave', () => {
-      if (!isInspectModeActive && activeHoveredSegIdx !== null) {
+      if (isInspectModeActive && activeHoveredSegIdx !== null) {
         scheduleHideDictionaryPopover(180);
       }
     });
 
+    // Tap / Click word in Box 1 when Dictionary Inspect Mode is ON
     box1Wrapper.addEventListener('click', (e) => {
       if (currentLang !== 'ja' || !isInspectModeActive) return;
       const hitToken = e.target.closest('.box1-token') || findBox1TokenAtPoint(e.clientX, e.clientY);
