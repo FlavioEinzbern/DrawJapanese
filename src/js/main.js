@@ -76,8 +76,11 @@ function initThemeToggle() {
 
   const updateThemeButtonUI = () => {
     const isDark = document.body.classList.contains('dark-mode');
+    const themeStrings = (typeof getAppStrings === 'function')
+      ? getAppStrings().theme
+      : { toLight: 'Switch to Light Mode', toDark: 'Switch to Dark Mode' };
     themeBtn.innerHTML = isDark ? SUN_ICON_SVG : MOON_ICON_SVG;
-    themeBtn.title = isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode';
+    themeBtn.title = isDark ? themeStrings.toLight : themeStrings.toDark;
   };
 
   updateThemeButtonUI();
@@ -156,11 +159,14 @@ function initCanvasFullscreenToggle() {
   }
 
   const isInitiallyExpanded = document.body.classList.contains('canvas-expanded');
+  const canvasStrings = (typeof getAppStrings === 'function')
+    ? getAppStrings().canvas
+    : { expandCanvas: 'Expand canvas', collapseCanvas: 'Back to default view' };
 
   const btn = document.createElement('button');
   btn.id = 'btn-toggle-fullscreen';
   btn.type = 'button';
-  btn.title = isInitiallyExpanded ? 'Back to default view' : 'Expand canvas';
+  btn.title = isInitiallyExpanded ? canvasStrings.collapseCanvas : canvasStrings.expandCanvas;
   btn.setAttribute('aria-label', 'Toggle expanded canvas');
   btn.className = 'absolute bottom-2.5 right-2.5 z-30 p-2 rounded-xl bg-white/90 hover:bg-white active:bg-indigo-50 text-slate-600 hover:text-indigo-600 border border-slate-200/90 shadow-sm transition-all flex items-center justify-center';
   btn.innerHTML = isInitiallyExpanded ? COLLAPSE_ICON_SVG : EXPAND_ICON_SVG;
@@ -174,8 +180,12 @@ function initCanvasFullscreenToggle() {
 
     syncViewportHeight();
     const isExpanded = document.body.classList.toggle('canvas-expanded');
+    const cStrings = (typeof getAppStrings === 'function')
+      ? getAppStrings().canvas
+      : { expandCanvas: 'Expand canvas', collapseCanvas: 'Back to default view' };
+
     btn.innerHTML = isExpanded ? COLLAPSE_ICON_SVG : EXPAND_ICON_SVG;
-    btn.title = isExpanded ? 'Back to default view' : 'Expand canvas';
+    btn.title = isExpanded ? cStrings.collapseCanvas : cStrings.expandCanvas;
 
     if (isExpanded) {
       window.scrollTo(0, 0);
@@ -242,8 +252,11 @@ tabs.forEach(tab => {
     tab.classList.remove('border-transparent', 'text-slate-600');
 
     currentLang = tab.getAttribute('data-lang');
-    const langConfig = LANGUAGES[currentLang];
+    if (typeof applyAppLanguageUI === 'function') {
+      applyAppLanguageUI();
+    }
 
+    const langConfig = LANGUAGES[currentLang];
     drawingInstructions.textContent = langConfig.instruction;
     romanizationLabel.textContent = langConfig.romajiName;
     translitDesc.textContent = langConfig.desc;
@@ -299,7 +312,7 @@ document.getElementById('btn-clear-text').addEventListener('click', () => {
   }
   textOutputBox.blur();
   romanizedOutputBox.blur();
-  charCount.textContent = '0 chars';
+  charCount.textContent = typeof formatCharCountText === 'function' ? formatCharCountText(0) : '0 chars';
   autoResizeBoxes();
 });
 
@@ -314,14 +327,23 @@ function showToast(msg) {
   }, 2000);
 }
 
-async function copyToClipboard(text, label) {
+async function copyToClipboard(text, boxKey) {
+  const toastStrings = (typeof getAppStrings === 'function')
+    ? getAppStrings().toasts
+    : {
+        nothingToCopy: 'Nothing to copy!',
+        copiedBox1: 'Copied Character text to clipboard!',
+        copiedBox2: 'Copied Romanization to clipboard!'
+      };
+
   if (!text) {
-    showToast('Nothing to copy!');
+    showToast(toastStrings.nothingToCopy);
     return;
   }
+  const copiedMsg = boxKey === 'box2' ? toastStrings.copiedBox2 : toastStrings.copiedBox1;
   try {
     await navigator.clipboard.writeText(text);
-    showToast(`Copied ${label} to clipboard!`);
+    showToast(copiedMsg);
   } catch (err) {
     const temp = document.createElement('textarea');
     temp.value = text;
@@ -329,16 +351,16 @@ async function copyToClipboard(text, label) {
     temp.select();
     document.execCommand('copy');
     document.body.removeChild(temp);
-    showToast(`Copied ${label} to clipboard!`);
+    showToast(copiedMsg);
   }
 }
 
 document.getElementById('btn-copy-box1').addEventListener('click', () => {
-  copyToClipboard(textOutputBox.value, 'Character text');
+  copyToClipboard(textOutputBox.value, 'box1');
 });
 
 document.getElementById('btn-copy-box2').addEventListener('click', () => {
-  copyToClipboard(romanizedOutputBox.value, 'Romanization');
+  copyToClipboard(romanizedOutputBox.value, 'box2');
 });
 
 /* ==========================================================================
@@ -359,6 +381,9 @@ window.addEventListener('DOMContentLoaded', () => {
   syncViewportHeight();
   initThemeToggle();
   initCanvasFullscreenToggle();
+  if (typeof applyAppLanguageUI === 'function') {
+    applyAppLanguageUI();
+  }
   resizeCanvas();
   initKuroshiro();
 });
