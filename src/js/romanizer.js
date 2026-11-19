@@ -25,7 +25,8 @@ const DICT_TARGET_META = {
     name: 'English',
     searching: 'Searching dictionary...',
     notFound: 'No exact entry found for',
-    closeLabel: 'Close dictionary'
+    closeLabel: 'Close dictionary',
+    breakdownLabel: 'Word Breakdown'
   },
   es: {
     code: 'ES',
@@ -33,7 +34,8 @@ const DICT_TARGET_META = {
     name: 'Español',
     searching: 'Buscando en el diccionario...',
     notFound: 'No se encontró entrada exacta para',
-    closeLabel: 'Cerrar diccionario'
+    closeLabel: 'Cerrar diccionario',
+    breakdownLabel: 'Desglose gramatical'
   },
   pt: {
     code: 'PT',
@@ -41,7 +43,8 @@ const DICT_TARGET_META = {
     name: 'Português',
     searching: 'Pesquisando no dicionário...',
     notFound: 'Nenhuma entrada exata encontrada para',
-    closeLabel: 'Fechar dicionário'
+    closeLabel: 'Fechar dicionário',
+    breakdownLabel: 'Análise gramatical'
   }
 };
 
@@ -1033,6 +1036,71 @@ const POS_LABEL_TRANSLATIONS = {
   }
 };
 
+const GRAMMAR_BADGE_TRANSLATIONS = {
+  es: {
+    'Polite Negative': 'Negativo cortés',
+    'Polite Past Negative': 'Pasado negativo cortés',
+    'Polite Past': 'Pasado cortés',
+    'Polite Form': 'Forma cortés',
+    'Polite Volitional': 'Volitivo cortés',
+    'Polite Conditional': 'Condicional cortés',
+    'Polite Supposition': 'Suposición cortés',
+    'Past Negative': 'Pasado negativo',
+    'Negative': 'Negativo',
+    'Past Tense': 'Pasado',
+    'Plain Past': 'Pasado simple',
+    'Te-form': 'Forma -te',
+    'Desiderative': 'Desiderativo',
+    'Past Desiderative': 'Desiderativo pasado',
+    'Negative Desiderative': 'Desiderativo negativo',
+    'Past Negative Desiderative': 'Desiderativo pasado negativo',
+    'Passive / Potential': 'Pasiva / Potencial',
+    'Causative': 'Causativo',
+    'Conditional': 'Condicional',
+    'Negative Conditional': 'Condicional negativo',
+    'Volitional': 'Volitivo',
+    'Completed / Accidental Past': 'Pasado completado / accidental',
+    'Progressive / State (〜ている)': 'Progresivo / Estado (〜ている)',
+    'Polite Request (〜てください)': 'Petición cortés (〜てください)',
+    'Completion / Regret (〜てしまう)': 'Finalización / Lamento (〜てしまう)',
+    'Try Doing (〜てみる)': 'Intentar (〜てみる)',
+    'In Advance (〜ておく)': 'De antemano (〜ておく)',
+    'Resulting State (〜てある)': 'Estado resultante (〜てある)',
+    'Auxiliary: 〜ている': 'Auxiliar: 〜ている'
+  },
+  pt: {
+    'Polite Negative': 'Negativo polido',
+    'Polite Past Negative': 'Passado negativo polido',
+    'Polite Past': 'Passado polido',
+    'Polite Form': 'Forma polida',
+    'Polite Volitional': 'Volitivo polido',
+    'Polite Conditional': 'Condicional polido',
+    'Polite Supposition': 'Suposição polida',
+    'Past Negative': 'Passado negativo',
+    'Negative': 'Negativo',
+    'Past Tense': 'Passado',
+    'Plain Past': 'Passado simples',
+    'Te-form': 'Forma -te',
+    'Desiderative': 'Desiderativo',
+    'Past Desiderative': 'Desiderativo passado',
+    'Negative Desiderative': 'Desiderativo negativo',
+    'Past Negative Desiderative': 'Desiderativo passado negativo',
+    'Passive / Potential': 'Passiva / Potencial',
+    'Causative': 'Causativo',
+    'Conditional': 'Condicional',
+    'Negative Conditional': 'Condicional negativo',
+    'Volitional': 'Volitivo',
+    'Completed / Accidental Past': 'Passado concluído / acidental',
+    'Progressive / State (〜ている)': 'Progressivo / Estado (〜ている)',
+    'Polite Request (〜てください)': 'Pedido polido (〜てください)',
+    'Completion / Regret (〜てしまう)': 'Conclusão / Lamentação (〜てしまう)',
+    'Try Doing (〜てみる)': 'Tentar fazer (〜てみる)',
+    'In Advance (〜ておく)': 'De antemão (〜ておく)',
+    'Resulting State (〜てある)': 'Estado resultante (〜てある)',
+    'Auxiliary: 〜ている': 'Auxiliar: 〜ている'
+  }
+};
+
 function localizePosTag(posStr, targetLang) {
   if (!posStr || targetLang === 'en') return posStr;
   const table = POS_LABEL_TRANSLATIONS[targetLang];
@@ -1043,6 +1111,9 @@ function localizePosTag(posStr, targetLang) {
 
 function localizeBadgeLabel(badgeStr, targetLang) {
   if (!badgeStr || targetLang === 'en') return badgeStr;
+  const exactMap = GRAMMAR_BADGE_TRANSLATIONS[targetLang];
+  if (exactMap && exactMap[badgeStr]) return exactMap[badgeStr];
+
   if (targetLang === 'es') {
     return badgeStr
       .replace(/^Root:\s*/i, 'Raíz: ')
@@ -1144,13 +1215,25 @@ async function fetchJotobaSpanishSenses(surface, basicForm, readingHira, pos, ti
   return [];
 }
 
-/* Batched Post-Lookup Translator (EN -> ES / PT) for Specialized Glosses & Character Cards */
+/* Batched Post-Lookup Translator (EN -> ES / PT) with Empty-Entry Index Preservation */
 async function translateBatchEnToTarget(stringsArray, targetLang, timeoutMs = 2200) {
   if (!Array.isArray(stringsArray) || stringsArray.length === 0 || targetLang === 'en') {
     return stringsArray;
   }
 
-  const joined = stringsArray.map(s => String(s || '').replace(/\r?\n/g, ' ')).join('\n');
+  const nonEmptyIndices = [];
+  const nonEmptyTexts = [];
+  stringsArray.forEach((s, idx) => {
+    const clean = String(s || '').replace(/\r?\n/g, ' ').trim();
+    if (clean) {
+      nonEmptyIndices.push(idx);
+      nonEmptyTexts.push(clean);
+    }
+  });
+
+  if (nonEmptyTexts.length === 0) return stringsArray;
+
+  const joined = nonEmptyTexts.join('\n');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -1167,9 +1250,13 @@ async function translateBatchEnToTarget(stringsArray, targetLang, timeoutMs = 22
     if (!data || !Array.isArray(data.sentences)) return stringsArray;
 
     const fullTrans = data.sentences.map(s => (s && s.trans) ? s.trans : '').join('');
-    const splitLines = fullTrans.split('\n').map(s => s.trim());
+    const splitLines = fullTrans.split('\n').map(s => s.trim()).filter(Boolean);
 
-    return stringsArray.map((orig, idx) => splitLines[idx] || orig);
+    const output = [...stringsArray];
+    nonEmptyIndices.forEach((origIdx, i) => {
+      if (splitLines[i]) output[origIdx] = splitLines[i];
+    });
+    return output;
   } catch (_) {
     return stringsArray;
   } finally {
@@ -1179,9 +1266,11 @@ async function translateBatchEnToTarget(stringsArray, targetLang, timeoutMs = 22
 
 /* Option 2 Hybrid Coordinator: Combines Base Specialized Dict + Direct Target Dict + Batch Translation */
 async function buildLocalizedDictionaryData(tokenMeta) {
-  const { surface, basic, reading, pos, posDetail } = tokenMeta;
+  const { surface, basic, reading, pos, posDetail, prevToken, nextToken } = tokenMeta;
   const targetLang = dictTargetLang;
-  const cacheKey = `${currentLang}|${targetLang}|${surface}|${basic}|${reading}|${pos}`;
+  const prevSurf = (prevToken && prevToken.surface) || '';
+  const nextSurf = (nextToken && nextToken.surface) || '';
+  const cacheKey = `${currentLang}|${targetLang}|${surface}|${basic}|${reading}|${pos}|p:${prevSurf}|n:${nextSurf}`;
 
   if (HYBRID_DICT_LANG_CACHE.has(cacheKey)) {
     return HYBRID_DICT_LANG_CACHE.get(cacheKey);
@@ -1206,15 +1295,21 @@ async function buildLocalizedDictionaryData(tokenMeta) {
   }
 
   const baseSenses = Array.isArray(baseData.senses) ? baseData.senses : [];
+  const baseGrammarRows = Array.isArray(baseData.grammarBreakdown) ? baseData.grammarBreakdown : [];
   const baseBreakdowns = Array.isArray(baseData.charBreakdown) ? baseData.charBreakdown : [];
 
   const batchInputs = [
     ...baseSenses.map(s => s.gloss || ''),
+    ...baseGrammarRows.map(g => g.title || ''),
+    ...baseGrammarRows.map(g => g.sub || ''),
     ...baseBreakdowns.map(c => c.title || '')
   ];
 
-  const isJaGrammarToken = currentLang === 'ja' && typeof resolveLocalGrammarEntry === 'function'
-    && Boolean(resolveLocalGrammarEntry(surface, basic, pos, posDetail));
+  const isJaGrammarToken = Boolean(baseData.isContextGrammarOverride) || (
+    currentLang === 'ja' &&
+    typeof resolveLocalGrammarEntry === 'function' &&
+    Boolean(resolveLocalGrammarEntry(surface, basic, pos, posDetail))
+  );
 
   const queryTerm = (basic && basic !== '*') ? basic : surface;
 
@@ -1226,14 +1321,23 @@ async function buildLocalizedDictionaryData(tokenMeta) {
       : Promise.resolve([])
   ]);
 
+  const sCount = baseSenses.length;
+  const gCount = baseGrammarRows.length;
+
   const translatedSenses = baseSenses.map((s, idx) => ({
     pos: localizePosTag(s.pos || '', targetLang),
     gloss: translatedBatch[idx] || s.gloss
   }));
 
+  const translatedGrammarRows = baseGrammarRows.map((g, idx) => ({
+    ...g,
+    title: translatedBatch[sCount + idx] || g.title,
+    sub: translatedBatch[sCount + gCount + idx] || g.sub
+  }));
+
   const translatedBreakdowns = baseBreakdowns.map((c, idx) => ({
     ...c,
-    title: translatedBatch[baseSenses.length + idx] || c.title
+    title: translatedBatch[sCount + gCount * 2 + idx] || c.title
   }));
 
   const directSenses = [];
@@ -1279,6 +1383,7 @@ async function buildLocalizedDictionaryData(tokenMeta) {
     ...baseData,
     badges: localizedBadges,
     senses: mergedSenses.slice(0, 4),
+    grammarBreakdown: translatedGrammarRows,
     charBreakdown: translatedBreakdowns
   };
 
@@ -1459,17 +1564,51 @@ function positionDictionaryPopover(anchorRect) {
   pop.style.top = `${Math.round(top)}px`;
 }
 
+function extractTokenElementMeta(el) {
+  if (!el || !el.classList || !el.classList.contains('box1-token')) return null;
+  let suffixes = [];
+  const rawSuffixAttr = el.getAttribute('data-suffixes');
+  if (rawSuffixAttr) {
+    try {
+      suffixes = JSON.parse(rawSuffixAttr);
+    } catch (_) {}
+  }
+  const surface = el.getAttribute('data-surface') || el.textContent || '';
+  return {
+    surface,
+    basic: el.getAttribute('data-basic') || surface,
+    reading: el.getAttribute('data-reading') || '',
+    pos: el.getAttribute('data-pos') || '',
+    posDetail: el.getAttribute('data-pos-detail') || '',
+    stem: el.getAttribute('data-stem') || '',
+    stemReading: el.getAttribute('data-stem-reading') || '',
+    suffixes
+  };
+}
+
+function getAdjacentBox1TokenMeta(tokenEl, direction) {
+  let node = direction < 0 ? tokenEl.previousSibling : tokenEl.nextSibling;
+  while (node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const txt = node.textContent || '';
+      if (/\n/.test(txt) || !/^[ \t\u3000]*$/.test(txt)) return null;
+      node = direction < 0 ? node.previousSibling : node.nextSibling;
+      continue;
+    }
+    if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains('box1-token')) {
+      return extractTokenElementMeta(node);
+    }
+    return null;
+  }
+  return null;
+}
+
 async function triggerTokenDictionaryLookup(tokenEl) {
   if (!tokenEl || !isInspectModeActive) return;
 
   const segIdx = Number(tokenEl.getAttribute('data-seg-idx'));
-  const surface = tokenEl.getAttribute('data-surface') || tokenEl.textContent || '';
-  const basic = tokenEl.getAttribute('data-basic') || surface;
-  const reading = tokenEl.getAttribute('data-reading') || '';
-  const pos = tokenEl.getAttribute('data-pos') || '';
-  const posDetail = tokenEl.getAttribute('data-pos-detail') || '';
-
-  if (!surface.trim()) return;
+  const baseMeta = extractTokenElementMeta(tokenEl);
+  if (!baseMeta || !baseMeta.surface.trim()) return;
 
   clearTimeout(dictHoverHideTimer);
   activeHoveredSegIdx = segIdx;
@@ -1485,9 +1624,9 @@ async function triggerTokenDictionaryLookup(tokenEl) {
     <div class="dict-popover-header">
       <div>
         <div>
-          <span class="dict-headword">${escapeHtml(surface)}</span>
+          <span class="dict-headword">${escapeHtml(baseMeta.surface)}</span>
         </div>
-        <div class="dict-romaji">${escapeHtml(reading)}</div>
+        <div class="dict-romaji">${escapeHtml(baseMeta.reading)}</div>
       </div>
       <button type="button" class="dict-close-btn" aria-label="${escapeHtml(langMeta.closeLabel)}">✕</button>
     </div>
@@ -1497,7 +1636,11 @@ async function triggerTokenDictionaryLookup(tokenEl) {
   pop.classList.remove('hidden');
   positionDictionaryPopover(anchorRect);
 
-  const tokenMeta = { surface, basic, reading, pos, posDetail };
+  const tokenMeta = {
+    ...baseMeta,
+    prevToken: getAdjacentBox1TokenMeta(tokenEl, -1),
+    nextToken: getAdjacentBox1TokenMeta(tokenEl, 1)
+  };
   const dictData = await buildLocalizedDictionaryData(tokenMeta);
 
   if (reqId !== dictLookupRequestId || !isInspectModeActive || !dictData) return;
@@ -1514,7 +1657,31 @@ async function triggerTokenDictionaryLookup(tokenEl) {
     }).join('');
     sensesHtml = `<ol class="dict-senses-list">${items}</ol>`;
   } else {
-    sensesHtml = `<div class="text-xs opacity-75 py-0.5">${escapeHtml(langMeta.notFound)} ${escapeHtml(surface)}.</div>`;
+    sensesHtml = `<div class="text-xs opacity-75 py-0.5">${escapeHtml(langMeta.notFound)} ${escapeHtml(baseMeta.surface)}.</div>`;
+  }
+
+  let grammarBreakdownHtml = '';
+  if (Array.isArray(dictData.grammarBreakdown) && dictData.grammarBreakdown.length > 0) {
+    const rows = dictData.grammarBreakdown.map((g) => {
+      const chipClass = g.kind === 'stem'
+        ? 'dict-grammar-chip is-stem'
+        : (g.kind === 'context' ? 'dict-grammar-chip is-context' : 'dict-grammar-chip');
+      return `
+        <div class="dict-grammar-row">
+          <span class="${chipClass}">${escapeHtml(g.literal)}</span>
+          <div class="text-[11px] leading-snug">
+            <div class="font-medium">${escapeHtml(g.title)} ${g.meta ? `<span class="opacity-60">(${escapeHtml(g.meta)})</span>` : ''}</div>
+            ${g.sub ? `<div class="opacity-70 text-[10px]">${escapeHtml(g.sub)}</div>` : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+    grammarBreakdownHtml = `
+      <div class="dict-grammar-section">
+        <div class="dict-section-label">${escapeHtml(langMeta.breakdownLabel)}</div>
+        ${rows}
+      </div>
+    `;
   }
 
   let breakdownHtml = '';
@@ -1535,7 +1702,7 @@ async function triggerTokenDictionaryLookup(tokenEl) {
     <div class="dict-popover-header">
       <div>
         <div>
-          <span class="dict-headword">${escapeHtml(dictData.headword || surface)}</span>
+          <span class="dict-headword">${escapeHtml(dictData.headword || baseMeta.surface)}</span>
           ${dictData.reading ? `<span class="dict-reading">${escapeHtml(dictData.reading)}</span>` : ''}
         </div>
         <div class="dict-romaji">${escapeHtml(dictData.romanization || '')}</div>
@@ -1544,6 +1711,7 @@ async function triggerTokenDictionaryLookup(tokenEl) {
       <button type="button" class="dict-close-btn" aria-label="${escapeHtml(langMeta.closeLabel)}">✕</button>
     </div>
     ${sensesHtml}
+    ${grammarBreakdownHtml}
     ${breakdownHtml}
   `;
   pop.querySelector('.dict-close-btn').addEventListener('click', hideDictionaryPopover);
