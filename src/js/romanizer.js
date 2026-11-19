@@ -1045,14 +1045,22 @@ const GRAMMAR_BADGE_TRANSLATIONS = {
     'Polite Volitional': 'Volitivo cortés',
     'Polite Conditional': 'Condicional cortés',
     'Polite Supposition': 'Suposición cortés',
+    'Plain Supposition': 'Suposición simple',
+    'Politeness Marker': 'Marcador de cortesía',
+    'Negative Copula': 'Cópula negativa',
+    'Polite Negative Copula': 'Cópula negativa cortés',
+    'Past Negative Copula': 'Cópula pasada negativa',
+    'Polite Past Negative Copula': 'Cópula pasada negativa cortés',
     'Past Negative': 'Pasado negativo',
     'Negative': 'Negativo',
+    'Negative Volitional': 'Volitivo negativo',
     'Past Tense': 'Pasado',
     'Plain Past': 'Pasado simple',
     'Te-form': 'Forma -te',
     'Desiderative': 'Desiderativo',
     'Past Desiderative': 'Desiderativo pasado',
     'Negative Desiderative': 'Desiderativo negativo',
+    'Polite Negative Desiderative': 'Desiderativo negativo cortés',
     'Past Negative Desiderative': 'Desiderativo pasado negativo',
     'Passive / Potential': 'Pasiva / Potencial',
     'Causative': 'Causativo',
@@ -1060,7 +1068,14 @@ const GRAMMAR_BADGE_TRANSLATIONS = {
     'Negative Conditional': 'Condicional negativo',
     'Volitional': 'Volitivo',
     'Completed / Accidental Past': 'Pasado completado / accidental',
+    'Colloquial Completion': 'Finalización coloquial',
     'Progressive / State (〜ている)': 'Progresivo / Estado (〜ている)',
+    'Negative Progressive': 'Progresivo negativo',
+    'Polite Negative Progressive': 'Progresivo negativo cortés',
+    'Past Progressive': 'Progresivo pasado',
+    'Polite Past Progressive': 'Progresivo pasado cortés',
+    'Past Negative Progressive': 'Progresivo pasado negativo',
+    'Polite Past Negative Progressive': 'Progresivo pasado negativo cortés',
     'Polite Request (〜てください)': 'Petición cortés (〜てください)',
     'Completion / Regret (〜てしまう)': 'Finalización / Lamento (〜てしまう)',
     'Try Doing (〜てみる)': 'Intentar (〜てみる)',
@@ -1076,14 +1091,22 @@ const GRAMMAR_BADGE_TRANSLATIONS = {
     'Polite Volitional': 'Volitivo polido',
     'Polite Conditional': 'Condicional polido',
     'Polite Supposition': 'Suposição polida',
+    'Plain Supposition': 'Suposição simples',
+    'Politeness Marker': 'Marcador de polidez',
+    'Negative Copula': 'Cópula negativa',
+    'Polite Negative Copula': 'Cópula negativa polida',
+    'Past Negative Copula': 'Cópula passada negativa',
+    'Polite Past Negative Copula': 'Cópula passada negativa polida',
     'Past Negative': 'Passado negativo',
     'Negative': 'Negativo',
+    'Negative Volitional': 'Volitivo negativo',
     'Past Tense': 'Passado',
     'Plain Past': 'Passado simples',
     'Te-form': 'Forma -te',
     'Desiderative': 'Desiderativo',
     'Past Desiderative': 'Desiderativo passado',
     'Negative Desiderative': 'Desiderativo negativo',
+    'Polite Negative Desiderative': 'Desiderativo negativo polido',
     'Past Negative Desiderative': 'Desiderativo passado negativo',
     'Passive / Potential': 'Passiva / Potencial',
     'Causative': 'Causativo',
@@ -1091,7 +1114,14 @@ const GRAMMAR_BADGE_TRANSLATIONS = {
     'Negative Conditional': 'Condicional negativo',
     'Volitional': 'Volitivo',
     'Completed / Accidental Past': 'Passado concluído / acidental',
+    'Colloquial Completion': 'Conclusão coloquial',
     'Progressive / State (〜ている)': 'Progressivo / Estado (〜ている)',
+    'Negative Progressive': 'Progressivo negativo',
+    'Polite Negative Progressive': 'Progressivo negativo polido',
+    'Past Progressive': 'Progressivo passado',
+    'Polite Past Progressive': 'Progressivo passado polido',
+    'Past Negative Progressive': 'Progressivo passado negativo',
+    'Polite Past Negative Progressive': 'Progressivo passado negativo polido',
     'Polite Request (〜てください)': 'Pedido polido (〜てください)',
     'Completion / Regret (〜てしまう)': 'Conclusão / Lamentação (〜てしまう)',
     'Try Doing (〜てみる)': 'Tentar fazer (〜てみる)',
@@ -1215,25 +1245,25 @@ async function fetchJotobaSpanishSenses(surface, basicForm, readingHira, pos, ti
   return [];
 }
 
-/* Batched Post-Lookup Translator (EN -> ES / PT) with Empty-Entry Index Preservation */
-async function translateBatchEnToTarget(stringsArray, targetLang, timeoutMs = 2200) {
+/* Index-Safe Batched Post-Lookup Translator (EN -> ES / PT) Using [#N] Markers */
+async function translateBatchEnToTarget(stringsArray, targetLang, timeoutMs = 2400) {
   if (!Array.isArray(stringsArray) || stringsArray.length === 0 || targetLang === 'en') {
     return stringsArray;
   }
 
-  const nonEmptyIndices = [];
-  const nonEmptyTexts = [];
+  const nonEmptyEntries = [];
   stringsArray.forEach((s, idx) => {
     const clean = String(s || '').replace(/\r?\n/g, ' ').trim();
     if (clean) {
-      nonEmptyIndices.push(idx);
-      nonEmptyTexts.push(clean);
+      nonEmptyEntries.push({ origIdx: idx, text: clean });
     }
   });
 
-  if (nonEmptyTexts.length === 0) return stringsArray;
+  if (nonEmptyEntries.length === 0) return stringsArray;
 
-  const joined = nonEmptyTexts.join('\n');
+  const joined = nonEmptyEntries
+    .map((entry, i) => `[#${i}] ${entry.text}`)
+    .join('\n');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -1250,11 +1280,36 @@ async function translateBatchEnToTarget(stringsArray, targetLang, timeoutMs = 22
     if (!data || !Array.isArray(data.sentences)) return stringsArray;
 
     const fullTrans = data.sentences.map(s => (s && s.trans) ? s.trans : '').join('');
-    const splitLines = fullTrans.split('\n').map(s => s.trim()).filter(Boolean);
-
     const output = [...stringsArray];
-    nonEmptyIndices.forEach((origIdx, i) => {
-      if (splitLines[i]) output[origIdx] = splitLines[i];
+
+    const markerRegex = /\[\s*#\s*(\d+)\s*\]/g;
+    const matches = [];
+    let m;
+    while ((m = markerRegex.exec(fullTrans)) !== null) {
+      matches.push({
+        batchIdx: Number(m[1]),
+        start: m.index,
+        end: markerRegex.lastIndex
+      });
+    }
+
+    if (matches.length > 0) {
+      for (let k = 0; k < matches.length; k++) {
+        const curr = matches[k];
+        const nextStart = k + 1 < matches.length ? matches[k + 1].start : fullTrans.length;
+        const translatedText = fullTrans.slice(curr.end, nextStart).replace(/\r?\n/g, ' ').trim();
+        const entry = nonEmptyEntries[curr.batchIdx];
+        if (entry && translatedText) {
+          output[entry.origIdx] = translatedText;
+        }
+      }
+      return output;
+    }
+
+    // Fallback if markers were altered: match line-by-line without stripping blanks
+    const splitLines = fullTrans.split('\n').map(s => s.trim());
+    nonEmptyEntries.forEach((entry, i) => {
+      if (splitLines[i]) output[entry.origIdx] = splitLines[i];
     });
     return output;
   } catch (_) {
@@ -1264,13 +1319,16 @@ async function translateBatchEnToTarget(stringsArray, targetLang, timeoutMs = 22
   }
 }
 
-/* Option 2 Hybrid Coordinator: Combines Base Specialized Dict + Direct Target Dict + Batch Translation */
+/* Hybrid Coordinator: Combines Base Specialized Dict + Direct Target Dict + Batch Translation */
 async function buildLocalizedDictionaryData(tokenMeta) {
-  const { surface, basic, reading, pos, posDetail, prevToken, nextToken } = tokenMeta;
+  const { surface, basic, reading, pos, posDetail, stem, suffixes, prevToken, nextToken } = tokenMeta;
   const targetLang = dictTargetLang;
   const prevSurf = (prevToken && prevToken.surface) || '';
   const nextSurf = (nextToken && nextToken.surface) || '';
-  const cacheKey = `${currentLang}|${targetLang}|${surface}|${basic}|${reading}|${pos}|p:${prevSurf}|n:${nextSurf}`;
+  const suffixKey = Array.isArray(suffixes)
+    ? suffixes.map(s => (s && s.surface) ? s.surface : '').join('+')
+    : '';
+  const cacheKey = `${currentLang}|${targetLang}|${surface}|${basic}|${reading}|${pos}|s:${stem || ''}|x:${suffixKey}|p:${prevSurf}|n:${nextSurf}`;
 
   if (HYBRID_DICT_LANG_CACHE.has(cacheKey)) {
     return HYBRID_DICT_LANG_CACHE.get(cacheKey);
@@ -1294,11 +1352,14 @@ async function buildLocalizedDictionaryData(tokenMeta) {
     return baseData;
   }
 
+  const hasSummary = Boolean(baseData.grammarSummary && baseData.grammarSummary.text);
+  const summaryInputs = hasSummary ? [baseData.grammarSummary.text] : [];
   const baseSenses = Array.isArray(baseData.senses) ? baseData.senses : [];
   const baseGrammarRows = Array.isArray(baseData.grammarBreakdown) ? baseData.grammarBreakdown : [];
   const baseBreakdowns = Array.isArray(baseData.charBreakdown) ? baseData.charBreakdown : [];
 
   const batchInputs = [
+    ...summaryInputs,
     ...baseSenses.map(s => s.gloss || ''),
     ...baseGrammarRows.map(g => g.title || ''),
     ...baseGrammarRows.map(g => g.sub || ''),
@@ -1321,23 +1382,31 @@ async function buildLocalizedDictionaryData(tokenMeta) {
       : Promise.resolve([])
   ]);
 
+  const sumCount = summaryInputs.length;
   const sCount = baseSenses.length;
   const gCount = baseGrammarRows.length;
 
+  const translatedSummary = hasSummary
+    ? {
+        ...baseData.grammarSummary,
+        text: translatedBatch[0] || baseData.grammarSummary.text
+      }
+    : null;
+
   const translatedSenses = baseSenses.map((s, idx) => ({
     pos: localizePosTag(s.pos || '', targetLang),
-    gloss: translatedBatch[idx] || s.gloss
+    gloss: translatedBatch[sumCount + idx] || s.gloss
   }));
 
   const translatedGrammarRows = baseGrammarRows.map((g, idx) => ({
     ...g,
-    title: translatedBatch[sCount + idx] || g.title,
-    sub: translatedBatch[sCount + gCount + idx] || g.sub
+    title: translatedBatch[sumCount + sCount + idx] || g.title,
+    sub: translatedBatch[sumCount + sCount + gCount + idx] || g.sub
   }));
 
   const translatedBreakdowns = baseBreakdowns.map((c, idx) => ({
     ...c,
-    title: translatedBatch[sCount + gCount * 2 + idx] || c.title
+    title: translatedBatch[sumCount + sCount + gCount * 2 + idx] || c.title
   }));
 
   const directSenses = [];
@@ -1382,6 +1451,7 @@ async function buildLocalizedDictionaryData(tokenMeta) {
   const localizedResult = {
     ...baseData,
     badges: localizedBadges,
+    grammarSummary: translatedSummary,
     senses: mergedSenses.slice(0, 4),
     grammarBreakdown: translatedGrammarRows,
     charBreakdown: translatedBreakdowns
@@ -1649,6 +1719,13 @@ async function triggerTokenDictionaryLookup(tokenEl) {
     ? dictData.badges.filter(Boolean).map(b => `<span class="dict-badge">${escapeHtml(b)}</span>`).join('')
     : '';
 
+  /* Option 3: Top Polarity / Tense Summary Banner */
+  let grammarSummaryHtml = '';
+  if (dictData.grammarSummary && dictData.grammarSummary.text) {
+    const negClass = dictData.grammarSummary.isNegative ? ' is-negative' : '';
+    grammarSummaryHtml = `<div class="dict-grammar-summary${negClass}">${escapeHtml(dictData.grammarSummary.text)}</div>`;
+  }
+
   let sensesHtml = '';
   if (Array.isArray(dictData.senses) && dictData.senses.length > 0) {
     const items = dictData.senses.map((s) => {
@@ -1710,6 +1787,7 @@ async function triggerTokenDictionaryLookup(tokenEl) {
       </div>
       <button type="button" class="dict-close-btn" aria-label="${escapeHtml(langMeta.closeLabel)}">✕</button>
     </div>
+    ${grammarSummaryHtml}
     ${sensesHtml}
     ${grammarBreakdownHtml}
     ${breakdownHtml}
