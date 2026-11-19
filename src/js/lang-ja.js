@@ -448,7 +448,7 @@ function mergeIrregularCounterTokens(tokens) {
 }
 
 /* ==========================================================================
-   Option 3: Japanese Conjugation & Sokuon Merger (Preserves Suffix Metadata)
+   Japanese Conjugation & Sokuon Merger (Preserves Stem + Suffix Metadata)
    ========================================================================== */
 const MERGEABLE_AUX_BASICS = new Set([
   'た', 'ます', 'ない', 'たい', 'う', 'よう', 'ん', 'ぬ', 'まい',
@@ -558,6 +558,11 @@ function mergeJapaneseConjugationTokens(tokens) {
       const nextRead = getSafeTokenReadingKata(next);
       const currPron = getSafeTokenPronunciationKata(curr);
       const nextPron = getSafeTokenPronunciationKata(next);
+
+      if (!curr._stemSurface) {
+        curr._stemSurface = curr.surface_form || '';
+        curr._stemReading = katakanaToHiragana(currRead);
+      }
 
       const nextBasic = (next.basic_form && next.basic_form !== '*') ? next.basic_form : (next.surface_form || '');
       const suffixInfo = {
@@ -739,10 +744,12 @@ async function buildFuriganaHtmlFromTokens(tokens) {
       const readHira = katakanaToHiragana(pronOrRead);
       const pos = tok.pos || '';
       const posDetail = tok.pos_detail_1 || '';
+      const stemAttr = tok._stemSurface ? ` data-stem="${escapeHtml(tok._stemSurface)}"` : '';
+      const stemReadAttr = tok._stemReading ? ` data-stem-reading="${escapeHtml(tok._stemReading)}"` : '';
       const suffixesAttr = (Array.isArray(tok._mergedSuffixes) && tok._mergedSuffixes.length > 0)
         ? ` data-suffixes="${escapeHtml(JSON.stringify(tok._mergedSuffixes))}"`
         : '';
-      html += `<span class="box1-token" data-seg-idx="${idx}" data-surface="${escapeHtml(surf)}" data-basic="${escapeHtml(basic)}" data-reading="${escapeHtml(readHira)}" data-pos="${escapeHtml(pos)}" data-pos-detail="${escapeHtml(posDetail)}"${suffixesAttr}>${innerHtml}</span>`;
+      html += `<span class="box1-token" data-seg-idx="${idx}" data-surface="${escapeHtml(surf)}" data-basic="${escapeHtml(basic)}" data-reading="${escapeHtml(readHira)}" data-pos="${escapeHtml(pos)}" data-pos-detail="${escapeHtml(posDetail)}"${stemAttr}${stemReadAttr}${suffixesAttr}>${innerHtml}</span>`;
     }
   }
 
@@ -846,6 +853,8 @@ async function buildJapaneseAlignedSegments(tokens) {
       reading: katakanaToHiragana(tok.reading || src),
       pos: tok.pos || '',
       posDetail: tok.pos_detail_1 || '',
+      stem: tok._stemSurface || '',
+      stemReading: tok._stemReading || '',
       suffixes: tok._mergedSuffixes || []
     });
   }
@@ -1577,7 +1586,7 @@ function extractActiveJapaneseQueryRange(text, explicitRange) {
 }
 
 /* ==========================================================================
-   Option 1 + Option 3: Kuromoji Grammar/POS Table + Conjugation Breakdowns
+   Option 2: Compound Conjugation Recognizer + Neighbor-Aware Grammar Engine
    ========================================================================== */
 const JA_GRAMMAR_TOKEN_DICT = {
   'の': {
@@ -1855,16 +1864,59 @@ const JA_GRAMMAR_TOKEN_DICT = {
       "is / am / are (polite copula)"
     ]
   },
+  'でした': {
+    posLabel: 'Polite Past Copula (助動詞・過去)',
+    senses: [
+      "was / were (polite past form of です)",
+      "past tense marker after 〜ません (forms polite past negative 〜ませんでした)"
+    ]
+  },
+  'でしょう': {
+    posLabel: 'Polite Supposition (助動詞)',
+    senses: [
+      "probably / it seems / isn't it? (polite form of だろう)"
+    ]
+  },
   'だ': {
     posLabel: 'Plain Copula (助動詞)',
     senses: [
       "is / am / are (plain declarative copula)"
     ]
   },
+  'だった': {
+    posLabel: 'Plain Past Copula (助動詞・過去)',
+    senses: [
+      "was / were (plain past form of だ)"
+    ]
+  },
+  'だろう': {
+    posLabel: 'Plain Supposition (助動詞)',
+    senses: [
+      "probably / I suppose / right? (plain supposition)"
+    ]
+  },
   'ます': {
     posLabel: 'Polite Auxiliary (助動詞)',
     senses: [
       "polite verb suffix (present / future affirmative)"
+    ]
+  },
+  'ません': {
+    posLabel: 'Polite Negative (丁寧・否定)',
+    senses: [
+      "polite negative verb ending (does not / will not)"
+    ]
+  },
+  'ました': {
+    posLabel: 'Polite Past (丁寧・過去)',
+    senses: [
+      "polite past tense verb ending (did / -ed)"
+    ]
+  },
+  'ましょう': {
+    posLabel: 'Polite Volitional (丁寧・勧誘)',
+    senses: [
+      "polite volitional ending ('let's...', 'shall we...')"
     ]
   },
   'た': {
@@ -1877,6 +1929,24 @@ const JA_GRAMMAR_TOKEN_DICT = {
     posLabel: 'Negative Auxiliary (助動詞)',
     senses: [
       "not / negation suffix (does not, is not)"
+    ]
+  },
+  'なかった': {
+    posLabel: 'Past Negative Auxiliary (助動詞・過去否定)',
+    senses: [
+      "did not / was not (plain past negative form of ない)"
+    ]
+  },
+  'なかったら': {
+    posLabel: 'Negative Conditional (助動詞)',
+    senses: [
+      "if not / unless (conditional negative form of ない)"
+    ]
+  },
+  'なければ': {
+    posLabel: 'Negative Conditional (助動詞)',
+    senses: [
+      "if not / unless (often used in 'must do' patterns)"
     ]
   },
   'ん': {
@@ -1895,6 +1965,12 @@ const JA_GRAMMAR_TOKEN_DICT = {
     posLabel: 'Desiderative Auxiliary (助動詞)',
     senses: [
       "want to do... (expresses speaker's desire)"
+    ]
+  },
+  'たかった': {
+    posLabel: 'Past Desiderative (助動詞・過去)',
+    senses: [
+      "wanted to do... (past form of たい)"
     ]
   },
   'らしい': {
@@ -1988,56 +2064,558 @@ function resolveLocalGrammarEntry(surface, basicForm, pos, posDetail) {
   return null;
 }
 
-function resolveConjugationSuffixExplanation(sfx) {
-  if (!sfx) return null;
-  const surf = sfx.surface || '';
-  const basic = sfx.basic || surf;
+/* Collapse fragmented Kuromoji auxiliary chains into natural Japanese grammar endings */
+function collapseCompoundSuffixes(rawSuffixes) {
+  if (!Array.isArray(rawSuffixes) || rawSuffixes.length === 0) return [];
+  const collapsed = [];
+  let i = 0;
 
-  // Voiced conjunctive で (e.g., 飲んで) vs location particle で
-  if (surf === 'で' && sfx.posDetail === '接続助詞') {
-    return {
-      title: "voiced te-form connector (links actions in sequence, 'and', 'by doing')",
-      sub: 'Conjunctive Particle (接続助詞)'
-    };
+  while (i < rawSuffixes.length) {
+    const s1 = rawSuffixes[i];
+    const s2 = i + 1 < rawSuffixes.length ? rawSuffixes[i + 1] : null;
+    const s3 = i + 2 < rawSuffixes.length ? rawSuffixes[i + 2] : null;
+
+    const f1 = s1 ? (s1.surface || '') : '';
+    const f2 = s2 ? (s2.surface || '') : '';
+    const f3 = s3 ? (s3.surface || '') : '';
+
+    // 3-part compound: たく + なかっ + た -> たくなかった
+    if (f1 === 'たく' && f2 === 'なかっ' && f3 === 'た') {
+      collapsed.push({
+        surface: 'たくなかった',
+        reading: 'たくなかった',
+        badge: 'Past Negative Desiderative',
+        sub: 'Past Negative Desiderative (過去否定・希望)',
+        title: 'did not want to do...'
+      });
+      i += 3;
+      continue;
+    }
+
+    // 2-part compounds
+    if (f1 === 'ませ' && (f2 === 'ん' || f2 === 'ぬ')) {
+      collapsed.push({
+        surface: f1 + f2,
+        reading: 'ません',
+        badge: 'Polite Negative',
+        sub: 'Polite Negative (丁寧・否定)',
+        title: 'polite negative ending (does not / will not)'
+      });
+      i += 2;
+      continue;
+    }
+
+    if (f1 === 'まし' && f2 === 'た') {
+      collapsed.push({
+        surface: 'ました',
+        reading: 'ました',
+        badge: 'Polite Past',
+        sub: 'Polite Past (丁寧・過去)',
+        title: 'polite past tense ending (did / -ed)'
+      });
+      i += 2;
+      continue;
+    }
+
+    if (f1 === 'ましょ' && f2 === 'う') {
+      collapsed.push({
+        surface: 'ましょう',
+        reading: 'ましょう',
+        badge: 'Polite Volitional',
+        sub: 'Polite Volitional (丁寧・勧誘)',
+        title: "polite volitional ending ('let's...', 'shall we...')"
+      });
+      i += 2;
+      continue;
+    }
+
+    if (f1 === 'まし' && f2 === 'たら') {
+      collapsed.push({
+        surface: 'ましたら',
+        reading: 'ましたら',
+        badge: 'Polite Conditional',
+        sub: 'Polite Conditional (丁寧・条件)',
+        title: 'polite conditional ending (if / when...)'
+      });
+      i += 2;
+      continue;
+    }
+
+    if (f1 === 'なかっ' && f2 === 'た') {
+      collapsed.push({
+        surface: 'なかった',
+        reading: 'なかった',
+        badge: 'Past Negative',
+        sub: 'Past Negative (過去・否定)',
+        title: 'plain past negative ending (did not / was not)'
+      });
+      i += 2;
+      continue;
+    }
+
+    if (f1 === 'なかっ' && f2 === 'たら') {
+      collapsed.push({
+        surface: 'なかったら',
+        reading: 'なかったら',
+        badge: 'Negative Conditional',
+        sub: 'Negative Conditional (否定・条件)',
+        title: 'negative conditional ending (if not / unless...)'
+      });
+      i += 2;
+      continue;
+    }
+
+    if (f1 === 'なけれ' && f2 === 'ば') {
+      collapsed.push({
+        surface: 'なければ',
+        reading: 'なければ',
+        badge: 'Negative Conditional',
+        sub: 'Negative Conditional (否定・条件)',
+        title: 'if not / unless (often used in "must do" patterns)'
+      });
+      i += 2;
+      continue;
+    }
+
+    if (f1 === 'たかっ' && f2 === 'た') {
+      collapsed.push({
+        surface: 'たかった',
+        reading: 'たかった',
+        badge: 'Past Desiderative',
+        sub: 'Past Desiderative (過去・希望)',
+        title: 'wanted to do... (past form of たい)'
+      });
+      i += 2;
+      continue;
+    }
+
+    if (f1 === 'たく' && f2 === 'ない') {
+      collapsed.push({
+        surface: 'たくない',
+        reading: 'たくない',
+        badge: 'Negative Desiderative',
+        sub: 'Negative Desiderative (否定・希望)',
+        title: 'do not want to do...'
+      });
+      i += 2;
+      continue;
+    }
+
+    if ((f1 === 'ちゃっ' || f1 === 'じゃっ') && f2 === 'た') {
+      collapsed.push({
+        surface: f1 + f2,
+        reading: f1 + f2,
+        badge: 'Completed / Accidental Past',
+        sub: 'Colloquial Past (〜てしまった)',
+        title: 'colloquial past of てしまう (completely / accidentally did)'
+      });
+      i += 2;
+      continue;
+    }
+
+    if (f1 === 'でし' && f2 === 'た') {
+      collapsed.push({
+        surface: 'でした',
+        reading: 'でした',
+        badge: 'Polite Past',
+        sub: 'Polite Past (丁寧・過去)',
+        title: 'polite past tense marker'
+      });
+      i += 2;
+      continue;
+    }
+
+    if (f1 === 'だっ' && f2 === 'た') {
+      collapsed.push({
+        surface: 'だった',
+        reading: 'だった',
+        badge: 'Plain Past',
+        sub: 'Plain Past (過去)',
+        title: 'plain past tense marker'
+      });
+      i += 2;
+      continue;
+    }
+
+    if (f1 === 'でしょ' && f2 === 'う') {
+      collapsed.push({
+        surface: 'でしょう',
+        reading: 'でしょう',
+        badge: 'Polite Supposition',
+        sub: 'Polite Supposition (推量)',
+        title: 'probably / I suppose / right?'
+      });
+      i += 2;
+      continue;
+    }
+
+    // Single suffix resolution
+    const single = resolveSingleSuffixMeta(s1);
+    if (single) collapsed.push(single);
+    i += 1;
   }
 
-  // Voiced past-tense だ (e.g., 読んだ) vs plain copula だ
+  return collapsed;
+}
+
+function resolveSingleSuffixMeta(sfx) {
+  if (!sfx || !sfx.surface) return null;
+  const surf = sfx.surface;
+  const basic = sfx.basic || surf;
+  const reading = sfx.reading || surf;
+
+  if (surf === 'て') {
+    return {
+      surface: 'て',
+      reading: 'て',
+      badge: 'Te-form',
+      sub: 'Conjunctive Particle (接続助詞)',
+      title: "te-form connector (links actions in sequence, 'and', 'by doing')"
+    };
+  }
+  if (surf === 'で' && sfx.posDetail === '接続助詞') {
+    return {
+      surface: 'で',
+      reading: 'で',
+      badge: 'Te-form',
+      sub: 'Conjunctive Particle (接続助詞)',
+      title: "voiced te-form connector (links actions in sequence, 'and', 'by doing')"
+    };
+  }
   if (surf === 'だ' && (basic === 'た' || sfx.pos === '助動詞')) {
     return {
-      title: 'voiced past tense or completed action suffix (-ed, did)',
-      sub: 'Past Auxiliary (助動詞)'
+      surface: 'だ',
+      reading: 'だ',
+      badge: 'Past Tense',
+      sub: 'Past Auxiliary (助動詞)',
+      title: 'voiced past tense or completed action suffix (-ed, did)'
+    };
+  }
+  if (surf === 'た') {
+    return {
+      surface: 'た',
+      reading: 'た',
+      badge: 'Past Tense',
+      sub: 'Past Auxiliary (助動詞)',
+      title: 'past tense or completed action suffix (-ed, did)'
+    };
+  }
+  if (surf === 'ます') {
+    return {
+      surface: 'ます',
+      reading: 'ます',
+      badge: 'Polite Form',
+      sub: 'Polite Auxiliary (助動詞)',
+      title: 'polite verb suffix (present / future affirmative)'
+    };
+  }
+  if (surf === 'ない') {
+    return {
+      surface: 'ない',
+      reading: 'ない',
+      badge: 'Negative',
+      sub: 'Negative Auxiliary (助動詞)',
+      title: 'plain negative suffix (does not / is not)'
+    };
+  }
+  if (surf === 'たい') {
+    return {
+      surface: 'たい',
+      reading: 'たい',
+      badge: 'Desiderative',
+      sub: 'Desiderative Auxiliary (助動詞)',
+      title: "want to do... (expresses speaker's desire)"
+    };
+  }
+  if (basic === 'れる' || basic === 'られる') {
+    return {
+      surface: surf,
+      reading,
+      badge: 'Passive / Potential',
+      sub: 'Auxiliary Verb (助動詞)',
+      title: "passive ('is done'), potential ('can do'), or honorific suffix"
+    };
+  }
+  if (basic === 'せる' || basic === 'させる') {
+    return {
+      surface: surf,
+      reading,
+      badge: 'Causative',
+      sub: 'Causative Auxiliary (助動詞)',
+      title: "causative suffix ('make someone do' / 'let someone do')"
+    };
+  }
+  if (surf === 'ば' || surf === 'たら') {
+    return {
+      surface: surf,
+      reading,
+      badge: 'Conditional',
+      sub: 'Conditional (条件)',
+      title: 'conditional ending (if / when...)'
+    };
+  }
+  if (surf === 'よう' || surf === 'う') {
+    return {
+      surface: surf,
+      reading,
+      badge: 'Volitional',
+      sub: 'Volitional Auxiliary (助動詞)',
+      title: "volitional suffix ('let's...', 'I will...') or supposition"
     };
   }
 
   const entry = JA_GRAMMAR_TOKEN_DICT[surf] || JA_GRAMMAR_TOKEN_DICT[basic];
   if (entry && Array.isArray(entry.senses) && entry.senses.length > 0) {
     return {
-      title: entry.senses[0],
-      sub: entry.posLabel || sfx.pos || ''
+      surface: surf,
+      reading,
+      badge: '',
+      sub: entry.posLabel || sfx.pos || '',
+      title: entry.senses[0]
     };
   }
 
   return {
-    title: basic !== surf ? `Conjugation ending (${basic})` : 'Conjugation ending',
-    sub: sfx.pos || ''
+    surface: surf,
+    reading,
+    badge: '',
+    sub: sfx.pos || '',
+    title: basic !== surf ? `conjugation ending (${basic})` : 'conjugation ending'
   };
 }
 
-function buildConjugationBreakdownCards(mergedSuffixes) {
-  if (!Array.isArray(mergedSuffixes) || mergedSuffixes.length === 0) return [];
-  const cards = [];
-  for (const sfx of mergedSuffixes) {
-    if (!sfx || !sfx.surface) continue;
-    const info = resolveConjugationSuffixExplanation(sfx);
-    if (!info) continue;
-    cards.push({
-      literal: `+${sfx.surface}`,
-      title: info.title,
-      meta: kanaToRomajiString(katakanaToHiragana(sfx.reading || sfx.surface)),
-      sub: info.sub
+function getStemTypeLabel(pos) {
+  if (pos === '動詞') return 'Verb Stem';
+  if (pos === '形容詞') return 'Adjective Stem';
+  if (pos === '助動詞') return 'Auxiliary Stem';
+  return 'Word Stem';
+}
+
+/* Option 2: Context-Aware Neighbor Analysis (食べません+でした, 〜て+いる/ください, 〜く+なかった) */
+function analyzeJapaneseNeighborContext(tokenMeta, collapsedSuffixes) {
+  const { surface, basic, pos, prevToken, nextToken } = tokenMeta;
+  const prevSurf = (prevToken && prevToken.surface) || '';
+  const prevBasic = (prevToken && prevToken.basic) || prevSurf;
+  const prevRead = (prevToken && prevToken.reading) || prevSurf;
+  const prevPos = (prevToken && prevToken.pos) || '';
+
+  const nextSurf = (nextToken && nextToken.surface) || '';
+  const nextBasic = (nextToken && nextToken.basic) || nextSurf;
+  const nextRead = (nextToken && nextToken.reading) || nextSurf;
+
+  const ctx = {
+    overrideGrammarEntry: null,
+    extraBadges: [],
+    replaceBadges: new Set(),
+    extraBreakdown: [],
+    suppressDefaultStemSuffix: false
+  };
+
+  // 1. でした right after 〜ません (e.g., 食べません + でした)
+  if (surface === 'でした' && prevSurf.endsWith('ません')) {
+    ctx.overrideGrammarEntry = {
+      posLabel: 'Polite Past Negative Marker (丁寧・過去否定)',
+      senses: [
+        `polite past tense marker completing "${prevSurf}" (did not...)`,
+        'attaches after 〜ません to form the polite past negative (〜ませんでした)'
+      ]
+    };
+    ctx.suppressDefaultStemSuffix = true;
+    ctx.extraBreakdown.push(
+      {
+        literal: prevSurf,
+        title: `preceding polite negative verb (${prevBasic !== prevSurf ? `from ${prevBasic}` : 'negative'})`,
+        meta: kanaToRomajiString(katakanaToHiragana(prevRead)),
+        sub: 'Previous Token',
+        kind: 'stem'
+      },
+      {
+        literal: '+でした',
+        title: 'turns 〜ません into polite past tense (did not)',
+        meta: 'deshita',
+        sub: 'Polite Past Marker',
+        kind: 'context'
+      }
+    );
+    return ctx;
+  }
+
+  // 2. 〜ません followed by でした (e.g., 食べません + でした)
+  if (surface.endsWith('ません') && nextSurf === 'でした') {
+    ctx.replaceBadges.add('Polite Negative');
+    ctx.extraBadges.push('Polite Past Negative');
+    ctx.extraBreakdown.push({
+      literal: '…+でした',
+      title: 'followed by でした → polite past negative (did not)',
+      meta: 'deshita',
+      sub: 'Next Token Context',
+      kind: 'context'
     });
   }
-  return cards;
+
+  // 3. 〜て / 〜で verb followed by auxiliary verb (いる, ください, しまう, みる, おく, ある)
+  const isTeDeVerb = pos === '動詞' && (
+    surface.endsWith('て') ||
+    surface.endsWith('で') ||
+    collapsedSuffixes.some(s => s.surface === 'て' || s.surface === 'で')
+  );
+
+  if (isTeDeVerb && nextSurf) {
+    if (nextBasic === 'いる' || nextBasic === 'おる') {
+      ctx.extraBadges.push('Progressive / State (〜ている)');
+      ctx.extraBreakdown.push({
+        literal: `…+${nextSurf}`,
+        title: 'with 〜て/で: expresses an ongoing action ("is ...ing") or resulting state',
+        meta: kanaToRomajiString(katakanaToHiragana(nextRead)),
+        sub: 'Next Token Context',
+        kind: 'context'
+      });
+    } else if (nextSurf === 'ください' || nextBasic === 'くださる') {
+      ctx.extraBadges.push('Polite Request (〜てください)');
+      ctx.extraBreakdown.push({
+        literal: `…+${nextSurf}`,
+        title: 'with 〜て/で: forms a polite request ("please do...")',
+        meta: kanaToRomajiString(katakanaToHiragana(nextRead)),
+        sub: 'Next Token Context',
+        kind: 'context'
+      });
+    } else if (nextBasic === 'しまう') {
+      ctx.extraBadges.push('Completion / Regret (〜てしまう)');
+      ctx.extraBreakdown.push({
+        literal: `…+${nextSurf}`,
+        title: 'with 〜て/で: expresses doing completely, accidentally, or with regret',
+        meta: kanaToRomajiString(katakanaToHiragana(nextRead)),
+        sub: 'Next Token Context',
+        kind: 'context'
+      });
+    } else if (nextBasic === 'みる') {
+      ctx.extraBadges.push('Try Doing (〜てみる)');
+      ctx.extraBreakdown.push({
+        literal: `…+${nextSurf}`,
+        title: 'with 〜て/で: expresses trying something out ("try doing...")',
+        meta: kanaToRomajiString(katakanaToHiragana(nextRead)),
+        sub: 'Next Token Context',
+        kind: 'context'
+      });
+    } else if (nextBasic === 'おく') {
+      ctx.extraBadges.push('In Advance (〜ておく)');
+      ctx.extraBreakdown.push({
+        literal: `…+${nextSurf}`,
+        title: 'with 〜て/で: expresses doing something in advance or leaving as is',
+        meta: kanaToRomajiString(katakanaToHiragana(nextRead)),
+        sub: 'Next Token Context',
+        kind: 'context'
+      });
+    } else if (nextBasic === 'ある') {
+      ctx.extraBadges.push('Resulting State (〜てある)');
+      ctx.extraBreakdown.push({
+        literal: `…+${nextSurf}`,
+        title: 'with 〜て/で: expresses a state resulting from a purposeful action',
+        meta: kanaToRomajiString(katakanaToHiragana(nextRead)),
+        sub: 'Next Token Context',
+        kind: 'context'
+      });
+    }
+  }
+
+  // 4. いる / います / いた / いました right after 〜て / 〜で verb
+  const prevIsTeDeVerb = prevPos === '動詞' && (prevSurf.endsWith('て') || prevSurf.endsWith('で'));
+  if (prevIsTeDeVerb && (basic === 'いる' || basic === 'おる')) {
+    ctx.extraBadges.push('Auxiliary: 〜ている');
+    ctx.extraBreakdown.push({
+      literal: `${prevSurf}+…`,
+      title: `with preceding "${prevSurf}": marks ongoing action ("is ...ing") or resulting state`,
+      meta: kanaToRomajiString(katakanaToHiragana(prevRead)),
+      sub: 'Previous Token Context',
+      kind: 'context'
+    });
+  } else if (prevIsTeDeVerb && (surface === 'ください' || basic === 'くださる')) {
+    ctx.extraBadges.push('Polite Request (〜てください)');
+    ctx.extraBreakdown.push({
+      literal: `${prevSurf}+…`,
+      title: `with preceding "${prevSurf}": polite request ("please do...")`,
+      meta: kanaToRomajiString(katakanaToHiragana(prevRead)),
+      sub: 'Previous Token Context',
+      kind: 'context'
+    });
+  }
+
+  // 5. 〜く i-adjective followed by ない / なかった (e.g., 大きく + なかった)
+  if (pos === '形容詞' && surface.endsWith('く') && (nextBasic === 'ない' || nextSurf.startsWith('なかっ') || nextSurf.startsWith('ありませ'))) {
+    const isPastNeg = nextSurf.includes('た') || nextSurf.includes('でした');
+    ctx.extraBadges.push(isPastNeg ? 'Past Negative' : 'Negative');
+    ctx.extraBreakdown.push({
+      literal: `…+${nextSurf}`,
+      title: isPastNeg
+        ? `followed by ${nextSurf} → past negative adjective ("was not...")`
+        : `followed by ${nextSurf} → negative adjective ("is not...")`,
+      meta: kanaToRomajiString(katakanaToHiragana(nextRead)),
+      sub: 'Next Token Context',
+      kind: 'context'
+    });
+  }
+
+  // 6. ない / なかった right after 〜く i-adjective (e.g., 大きく + なかった)
+  if (prevPos === '形容詞' && prevSurf.endsWith('く') && (basic === 'ない' || surface === 'なかった')) {
+    const isPastNeg = surface === 'なかった' || surface.endsWith('た');
+    ctx.overrideGrammarEntry = {
+      posLabel: isPastNeg ? 'Past Negative Auxiliary (過去否定)' : 'Negative Auxiliary (否定)',
+      senses: [
+        isPastNeg
+          ? `past negative ("was not...") — negates preceding adjective "${prevSurf}"`
+          : `negative ("is not...") — negates preceding adjective "${prevSurf}"`
+      ]
+    };
+    ctx.extraBreakdown.push({
+      literal: `${prevSurf}+…`,
+      title: `negates adjective ${prevBasic !== prevSurf ? prevBasic : prevSurf}`,
+      meta: kanaToRomajiString(katakanaToHiragana(prevRead)),
+      sub: 'Previous Token Context',
+      kind: 'context'
+    });
+  }
+
+  return ctx;
+}
+
+function buildWordGrammarBreakdown(tokenMeta, collapsedSuffixes, neighborCtx) {
+  const rows = [];
+  const { surface, basic, pos, stem, stemReading } = tokenMeta;
+
+  if (!neighborCtx.suppressDefaultStemSuffix && collapsedSuffixes.length > 0) {
+    const effectiveStem = stem || surface.slice(0, Math.max(1, surface.length - collapsedSuffixes.reduce((sum, s) => sum + s.surface.length, 0)));
+    const effectiveStemRead = stemReading || effectiveStem;
+
+    if (effectiveStem && effectiveStem !== surface) {
+      const stemRomaji = kanaToRomajiString(katakanaToHiragana(effectiveStemRead));
+      const rootNote = (basic && basic !== effectiveStem && basic !== surface)
+        ? `from ${basic}`
+        : (basic === effectiveStem ? 'dictionary stem' : '');
+      rows.push({
+        literal: effectiveStem,
+        title: rootNote ? `${getStemTypeLabel(pos)} (${rootNote})` : getStemTypeLabel(pos),
+        meta: stemRomaji,
+        sub: getStemTypeLabel(pos),
+        kind: 'stem'
+      });
+    }
+
+    for (const sfx of collapsedSuffixes) {
+      rows.push({
+        literal: `+${sfx.surface}`,
+        title: sfx.title,
+        meta: kanaToRomajiString(katakanaToHiragana(sfx.reading || sfx.surface)),
+        sub: sfx.sub || '',
+        kind: 'suffix'
+      });
+    }
+  }
+
+  if (Array.isArray(neighborCtx.extraBreakdown) && neighborCtx.extraBreakdown.length > 0) {
+    rows.push(...neighborCtx.extraBreakdown);
+  }
+
+  return rows;
 }
 
 function formatJotobaPosTag(posItem) {
@@ -2253,9 +2831,7 @@ async function fetchJotobaDictionaryData(surface, basicForm, readingHira, pos, p
 async function lookupJapaneseTokenDict(tokenMeta) {
   const { surface, basic, reading, pos, posDetail } = tokenMeta;
   const hasKanjiInSurface = KANJI_REGEX.test(surface);
-  const data = await fetchJotobaDictionaryData(surface, basic, reading, pos, posDetail);
 
-  // Extract merged conjugation suffixes attached to this token (Option 3)
   let mergedSuffixes = Array.isArray(tokenMeta.suffixes) ? tokenMeta.suffixes : [];
   if (mergedSuffixes.length === 0 && typeof lastInspectedTokenEl !== 'undefined' && lastInspectedTokenEl) {
     const rawSuffixAttr = lastInspectedTokenEl.getAttribute('data-suffixes');
@@ -2266,19 +2842,48 @@ async function lookupJapaneseTokenDict(tokenMeta) {
     }
   }
 
+  const collapsedSuffixes = collapseCompoundSuffixes(mergedSuffixes);
+  const neighborCtx = analyzeJapaneseNeighborContext(tokenMeta, collapsedSuffixes);
+
+  const data = neighborCtx.overrideGrammarEntry
+    ? {
+        surface,
+        basicForm: basic,
+        readingHira: reading,
+        isGrammar: true,
+        grammarEntry: neighborCtx.overrideGrammarEntry,
+        selectedWord: null,
+        kanjiDetails: []
+      }
+    : await fetchJotobaDictionaryData(surface, basic, reading, pos, posDetail);
+
   const badges = [];
-  if (basic && basic !== surface) badges.push(`Root: ${basic}`);
+  const addBadge = (b) => {
+    if (b && !badges.includes(b)) badges.push(b);
+  };
+
+  if (basic && basic !== surface) addBadge(`Root: ${basic}`);
+
+  // Add collapsed conjugation badges (e.g., Polite Negative, Te-form) unless upgraded by neighbor context
+  for (const sfx of collapsedSuffixes) {
+    if (sfx.badge && !neighborCtx.replaceBadges.has(sfx.badge)) {
+      addBadge(sfx.badge);
+    }
+  }
+  for (const b of neighborCtx.extraBadges) {
+    addBadge(b);
+  }
 
   const senses = [];
   if (data.isGrammar && data.grammarEntry) {
-    badges.push(data.grammarEntry.posLabel);
+    addBadge(data.grammarEntry.posLabel);
     for (const s of data.grammarEntry.senses) {
       senses.push({ pos: '', gloss: s });
     }
   } else {
     const topWord = data.selectedWord;
-    if (topWord && topWord.common) badges.push('Common');
-    if (pos) badges.push(pos);
+    if (topWord && topWord.common) addBadge('Common');
+    if (pos) addBadge(pos);
 
     if (topWord && Array.isArray(topWord.senses)) {
       for (const sense of topWord.senses.slice(0, 4)) {
@@ -2291,7 +2896,9 @@ async function lookupJapaneseTokenDict(tokenMeta) {
     }
   }
 
-  const charBreakdown = buildConjugationBreakdownCards(mergedSuffixes);
+  const grammarBreakdown = buildWordGrammarBreakdown(tokenMeta, collapsedSuffixes, neighborCtx);
+
+  const charBreakdown = [];
   if (hasKanjiInSurface && Array.isArray(data.kanjiDetails)) {
     for (const k of data.kanjiDetails) {
       const meanings = (k.meanings || []).join(', ') || 'Kanji';
@@ -2312,7 +2919,9 @@ async function lookupJapaneseTokenDict(tokenMeta) {
     romanization: kanaToRomajiString(katakanaToHiragana(reading || surface)),
     badges,
     senses,
-    charBreakdown
+    grammarBreakdown,
+    charBreakdown,
+    isContextGrammarOverride: Boolean(neighborCtx.overrideGrammarEntry)
   };
 }
 
