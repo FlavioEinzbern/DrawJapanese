@@ -83,34 +83,79 @@ function hiraganaToKatakana(str) {
   );
 }
 
+function getSokuonHepburnConsonant(nextRomaji) {
+  if (!nextRomaji) return "'";
+  const lower = nextRomaji.toLowerCase();
+  if (lower.startsWith('ch')) return 't';
+  if (/^[bcdfghjklmnpqrstvwxyz]/.test(lower)) return lower[0];
+  return "'";
+}
+
+function expandLeftoverChouonpu(str) {
+  return String(str || '').replace(/([aiueoAIUEO])ー+/g, (_, v) => v + v.toLowerCase());
+}
+
 function kanaToRomajiString(str) {
   let res = '';
   let i = 0;
   while (i < str.length) {
-    if (str[i] === 'っ' || str[i] === 'ッ') {
+    const ch = str[i];
+
+    // Sokuon (っ / ッ): Hepburn 't' before 'ch', doubled consonant otherwise, glottal stop (') at end/punctuation
+    if (ch === 'っ' || ch === 'ッ') {
       if (i + 1 < str.length) {
         const nextTwo = str.substr(i + 1, 2);
         const nextOne = str[i + 1];
         const nextRomaji = KANA_MAP[nextTwo] || KANA_MAP[nextOne] || '';
-        if (nextRomaji) {
-          res += nextRomaji[0];
+        res += getSokuonHepburnConsonant(nextRomaji);
+      } else {
+        res += "'";
+      }
+      i++;
+      continue;
+    }
+
+    // Chouonpu (ー): lengthen previous vowel dynamically
+    if (ch === 'ー') {
+      const prevChar = res.length > 0 ? res[res.length - 1] : '';
+      if (/[aiueoAIUEO]/.test(prevChar)) {
+        res += prevChar.toLowerCase();
+      } else {
+        res += '-';
+      }
+      i++;
+      continue;
+    }
+
+    // Syllabic 'n' before vowel or 'y' (Hepburn n')
+    if (ch === 'ん' || ch === 'ン') {
+      if (i + 1 < str.length) {
+        const nextTwo = str.substr(i + 1, 2);
+        const nextOne = str[i + 1];
+        const nextRomaji = KANA_MAP[nextTwo] || KANA_MAP[nextOne] || '';
+        if (/^[aiueoy]/i.test(nextRomaji)) {
+          res += "n'";
           i++;
           continue;
         }
       }
+      res += 'n';
+      i++;
+      continue;
     }
+
     const twoChar = str.substr(i, 2);
     if (KANA_MAP[twoChar]) {
       res += KANA_MAP[twoChar];
       i += 2;
       continue;
     }
-    if (KANA_MAP[str[i]]) {
-      res += KANA_MAP[str[i]];
+    if (KANA_MAP[ch]) {
+      res += KANA_MAP[ch];
       i++;
       continue;
     }
-    res += str[i];
+    res += ch;
     i++;
   }
   return res;
@@ -402,6 +447,149 @@ function mergeIrregularCounterTokens(tokens) {
   return result;
 }
 
+/* ==========================================================================
+   Option 3: Japanese Conjugation & Sokuon Merger (Preserves Suffix Metadata)
+   ========================================================================== */
+const MERGEABLE_AUX_BASICS = new Set([
+  'た', 'ます', 'ない', 'たい', 'う', 'よう', 'ん', 'ぬ', 'まい',
+  'たら', 'れる', 'られる', 'せる', 'させる', 'ちゃ', 'ちゃう', 'じゃ', 'じゃう'
+]);
+const MERGEABLE_CONJ_PARTICLES = new Set(['て', 'で', 'ば', 'たら', 'たり', 'だり', 'ちゃ', 'じゃ']);
+const MERGEABLE_VERB_SUFFIX_BASICS = new Set(['れる', 'られる', 'せる', 'させる', 'ちゃう', 'じゃう']);
+
+function getSafeTokenReadingKata(tok) {
+  if (tok && tok.reading && tok.reading !== '*') return tok.reading;
+  return hiraganaToKatakana((tok && tok.surface_form) || '');
+}
+
+function getSafeTokenPronunciationKata(tok) {
+  if (tok && tok.pronunciation && tok.pronunciation !== '*') return tok.pronunciation;
+  return getSafeTokenReadingKata(tok);
+}
+
+function startsWithConsonantKana(tok) {
+  const readHira = katakanaToHiragana(getSafeTokenReadingKata(tok));
+  if (!readHira) return false;
+  const two = readHira.substr(0, 2);
+  const one = readHira[0];
+  const rom = KANA_MAP[two] || KANA_MAP[one] || '';
+  return /^[bcdfghjklmnpqrstvwxyz]/i.test(rom);
+}
+
+function shouldMergeConjugationToken(curr, next) {
+  if (!curr || !next) return false;
+  const currSurf = curr.surface_form || '';
+  const nextSurf = next.surface_form || '';
+
+  if (!currSurf || !nextSurf) return false;
+  if (/^\s+$/.test(currSurf) || /^\s+$/.test(nextSurf)) return false;
+  if (curr.pos === '記号' || next.pos === '記号') return false;
+
+  // 1. Universal sokuon bridge: if current token ends in っ/ッ and next starts with a consonant kana
+  if (/[っッ]$/.test(currSurf) && startsWithConsonantKana(next)) {
+    return true;
+  }
+
+  // Only merge grammatical endings onto verbs, i-adjectives, or auxiliaries (never onto nouns)
+  const isConjugableHost =
+    curr.pos === '動詞' ||
+    curr.pos === '形容詞' ||
+    curr.pos === '助動詞';
+
+  if (!isConjugableHost) return false;
+
+  const nextBasic = (next.basic_form && next.basic_form !== '*') ? next.basic_form : nextSurf;
+
+  // Keep polite/plain copula (です / だ) separate from preceding verbs/adjectives (e.g., 食べません でした, おいしい です)
+  if (next.pos === '助動詞' && (nextBasic === 'です' || nextBasic === 'だ')) {
+    // Exception: voiced past tense だ after verb stem ending in ん (e.g., 読ん + だ -> 読んだ)
+    if (nextSurf === 'だ' && curr.pos === '動詞' && currSurf.endsWith('ん')) {
+      return true;
+    }
+    return false;
+  }
+
+  // Keep く-form adjective + ない separate (e.g., 大きく なかった) so なかった merges cleanly as its own word
+  if (curr.pos === '形容詞' && currSurf.endsWith('く') && nextBasic === 'ない') {
+    return false;
+  }
+
+  // Do not glue another auxiliary onto an already-closed conjunctive te/de-form (e.g., 食べて ない)
+  if (curr._endsWithConjParticle) {
+    return false;
+  }
+
+  // 2. Bound auxiliary verbs (た, ます, ない, たい, う, よう, ん, ぬ, まい, etc.)
+  if (next.pos === '助動詞' && MERGEABLE_AUX_BASICS.has(nextBasic)) {
+    return true;
+  }
+
+  // 3. Bound verb suffixes (れる, られる, せる, させる, ちゃう, じゃう)
+  if (
+    next.pos === '動詞' &&
+    (next.pos_detail_1 === '接尾' || next.pos_detail_1 === '非自立') &&
+    MERGEABLE_VERB_SUFFIX_BASICS.has(nextBasic)
+  ) {
+    return true;
+  }
+
+  // 4. Bound conjunctive / representative particles directly on verb/adj/aux stems (て, で, ば, たら, たり, だり)
+  if (
+    next.pos === '助詞' &&
+    (next.pos_detail_1 === '接続助詞' || next.pos_detail_1 === '並立助詞') &&
+    MERGEABLE_CONJ_PARTICLES.has(nextSurf)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function mergeJapaneseConjugationTokens(tokens) {
+  if (!Array.isArray(tokens) || tokens.length === 0) return tokens;
+  const result = [];
+
+  for (let i = 0; i < tokens.length; i++) {
+    const next = { ...tokens[i] };
+    const curr = result.length > 0 ? result[result.length - 1] : null;
+
+    if (curr && shouldMergeConjugationToken(curr, next)) {
+      const currRead = getSafeTokenReadingKata(curr);
+      const nextRead = getSafeTokenReadingKata(next);
+      const currPron = getSafeTokenPronunciationKata(curr);
+      const nextPron = getSafeTokenPronunciationKata(next);
+
+      const nextBasic = (next.basic_form && next.basic_form !== '*') ? next.basic_form : (next.surface_form || '');
+      const suffixInfo = {
+        surface: next.surface_form || '',
+        basic: nextBasic,
+        reading: katakanaToHiragana(nextRead),
+        pos: next.pos || '',
+        posDetail: next.pos_detail_1 || ''
+      };
+
+      curr.surface_form = (curr.surface_form || '') + (next.surface_form || '');
+      curr.reading = currRead + nextRead;
+      curr.pronunciation = currPron + nextPron;
+      curr._mergedSuffixes = [...(curr._mergedSuffixes || []), suffixInfo];
+
+      if (
+        next.pos === '助詞' &&
+        (next.pos_detail_1 === '接続助詞' || next.pos_detail_1 === '並立助詞') &&
+        (next.surface_form === 'て' || next.surface_form === 'で')
+      ) {
+        curr._endsWithConjParticle = true;
+      } else {
+        curr._endsWithConjParticle = false;
+      }
+    } else {
+      result.push(next);
+    }
+  }
+
+  return result;
+}
+
 function hasPrecedingWordForParticle(tokens, index) {
   if (index <= 0) return false;
   const prev = tokens[index - 1];
@@ -480,8 +668,9 @@ function patchKuromojiAnalyzer(analyzer) {
       return override;
     }
     const rawTokens = await origParse(str);
-    const mergedTokens = mergeIrregularCounterTokens(rawTokens);
-    return applyParticleGrammarRules(mergedTokens);
+    const mergedCounters = mergeIrregularCounterTokens(rawTokens);
+    const mergedConjugations = mergeJapaneseConjugationTokens(mergedCounters);
+    return applyParticleGrammarRules(mergedConjugations);
   };
   analyzer._customRulesPatched = true;
 }
@@ -550,7 +739,10 @@ async function buildFuriganaHtmlFromTokens(tokens) {
       const readHira = katakanaToHiragana(pronOrRead);
       const pos = tok.pos || '';
       const posDetail = tok.pos_detail_1 || '';
-      html += `<span class="box1-token" data-seg-idx="${idx}" data-surface="${escapeHtml(surf)}" data-basic="${escapeHtml(basic)}" data-reading="${escapeHtml(readHira)}" data-pos="${escapeHtml(pos)}" data-pos-detail="${escapeHtml(posDetail)}">${innerHtml}</span>`;
+      const suffixesAttr = (Array.isArray(tok._mergedSuffixes) && tok._mergedSuffixes.length > 0)
+        ? ` data-suffixes="${escapeHtml(JSON.stringify(tok._mergedSuffixes))}"`
+        : '';
+      html += `<span class="box1-token" data-seg-idx="${idx}" data-surface="${escapeHtml(surf)}" data-basic="${escapeHtml(basic)}" data-reading="${escapeHtml(readHira)}" data-pos="${escapeHtml(pos)}" data-pos-detail="${escapeHtml(posDetail)}"${suffixesAttr}>${innerHtml}</span>`;
     }
   }
 
@@ -575,6 +767,41 @@ async function renderBox1FuriganaOnly(text) {
     }
   }
   furiganaBackdrop.innerHTML = fallbackJapaneseFuriganaHtml(text);
+}
+
+async function convertJapaneseTokenToRomaji(tok) {
+  const src = tok.surface_form || '';
+  const readingKata = (tok.reading && tok.reading !== '*') ? tok.reading : '';
+
+  // Handle true trailing sokuon (e.g., あっ！ -> a'!) instead of Kuroshiro's "tsu" fallback
+  if (/[っッ]$/.test(src)) {
+    const trimmedSrc = src.slice(0, -1);
+    const trimmedRead = readingKata.endsWith('ッ') ? readingKata.slice(0, -1) : readingKata;
+    const trimmedPron = (tok.pronunciation && tok.pronunciation.endsWith('ッ'))
+      ? tok.pronunciation.slice(0, -1)
+      : (tok.pronunciation || trimmedRead);
+
+    if (!trimmedSrc) return "'";
+
+    const baseRom = await convertTokensWithKuroshiro([{
+      ...tok,
+      surface_form: trimmedSrc,
+      reading: trimmedRead || undefined,
+      pronunciation: trimmedPron || undefined
+    }], {
+      to: 'romaji',
+      mode: 'spaced',
+      romajiSystem: 'hepburn'
+    });
+    return expandLeftoverChouonpu(baseRom.trim()) + "'";
+  }
+
+  const rawRom = await convertTokensWithKuroshiro([tok], {
+    to: 'romaji',
+    mode: 'spaced',
+    romajiSystem: 'hepburn'
+  });
+  return expandLeftoverChouonpu(rawRom);
 }
 
 async function buildJapaneseAlignedSegments(tokens) {
@@ -605,11 +832,7 @@ async function buildJapaneseAlignedSegments(tokens) {
       continue;
     }
 
-    const rawRom = await convertTokensWithKuroshiro([tok], {
-      to: 'romaji',
-      mode: 'spaced',
-      romajiSystem: 'hepburn'
-    });
+    const rawRom = await convertJapaneseTokenToRomaji(tok);
     const isKanjiOrDigitNumber = PURE_JA_NUMBER_SURFACE_REGEX.test(src);
     const processed = postProcessJapaneseRomajiNumbers(rawRom, isKanjiOrDigitNumber);
     segs.push({
@@ -622,7 +845,8 @@ async function buildJapaneseAlignedSegments(tokens) {
       basic: (tok.basic_form && tok.basic_form !== '*') ? tok.basic_form : src,
       reading: katakanaToHiragana(tok.reading || src),
       pos: tok.pos || '',
-      posDetail: tok.pos_detail_1 || ''
+      posDetail: tok.pos_detail_1 || '',
+      suffixes: tok._mergedSuffixes || []
     });
   }
   return segs;
@@ -757,7 +981,8 @@ function fallbackJapaneseFuriganaHtml(str) {
 }
 
 function postProcessJapaneseRomajiNumbers(rawRomaji, isWholeTokenNumber = false) {
-  const parts = rawRomaji.split(/([0-9０-９]+)/g).filter(Boolean);
+  const normalizedRaw = expandLeftoverChouonpu(rawRomaji);
+  const parts = normalizedRaw.split(/([0-9０-９]+)/g).filter(Boolean);
   let plainOut = '';
   let htmlOut = '';
 
@@ -838,17 +1063,23 @@ function fallbackJapaneseRomanizeWithBlueNumbers(str) {
     }
 
     if (str[i] === 'っ' || str[i] === 'ッ') {
-      if (i + 1 < str.length) {
-        const nextTwo = str.substr(i + 1, 2);
-        const nextOne = str[i + 1];
-        const nextRomaji = KANA_MAP[nextTwo] || KANA_MAP[nextOne] || '';
-        if (nextRomaji) {
-          plain += nextRomaji[0];
-          html += escapeHtml(nextRomaji[0]);
-          i++;
-          continue;
-        }
-      }
+      const nextTwo = str.substr(i + 1, 2);
+      const nextOne = str[i + 1] || '';
+      const nextRomaji = KANA_MAP[nextTwo] || KANA_MAP[nextOne] || '';
+      const outCh = getSokuonHepburnConsonant(nextRomaji);
+      plain += outCh;
+      html += escapeHtml(outCh);
+      i++;
+      continue;
+    }
+
+    if (str[i] === 'ー') {
+      const prevChar = plain.length > 0 ? plain[plain.length - 1] : '';
+      const outCh = /[aiueoAIUEO]/.test(prevChar) ? prevChar.toLowerCase() : '-';
+      plain += outCh;
+      html += escapeHtml(outCh);
+      i++;
+      continue;
     }
 
     const twoChar = str.substr(i, 2);
@@ -1346,7 +1577,7 @@ function extractActiveJapaneseQueryRange(text, explicitRange) {
 }
 
 /* ==========================================================================
-   Option 1: Kuromoji Grammar/POS Table + Strict Box 1 Surface-Locked Jotoba
+   Option 1 + Option 3: Kuromoji Grammar/POS Table + Conjugation Breakdowns
    ========================================================================== */
 const JA_GRAMMAR_TOKEN_DICT = {
   'の': {
@@ -1567,6 +1798,12 @@ const JA_GRAMMAR_TOKEN_DICT = {
       "doing things like A and B (representative actions)"
     ]
   },
+  'だり': {
+    posLabel: 'Particle (並立助詞)',
+    senses: [
+      "voiced form of たり (doing things like A and B)"
+    ]
+  },
   'のに': {
     posLabel: 'Conjunctive Particle (接続助詞)',
     senses: [
@@ -1695,6 +1932,42 @@ const JA_GRAMMAR_TOKEN_DICT = {
     senses: [
       "causative suffix ('make someone do' / 'let someone do')"
     ]
+  },
+  'ちゃう': {
+    posLabel: 'Colloquial Auxiliary (補助動詞)',
+    senses: [
+      "colloquial contraction of てしまう (completely / accidentally / regrettably)"
+    ]
+  },
+  'じゃう': {
+    posLabel: 'Colloquial Auxiliary (補助動詞)',
+    senses: [
+      "voiced colloquial contraction of でしまう (completely / accidentally / regrettably)"
+    ]
+  },
+  'ちゃ': {
+    posLabel: 'Colloquial Contraction (助詞)',
+    senses: [
+      "colloquial contraction of ては or てしまう"
+    ]
+  },
+  'じゃ': {
+    posLabel: 'Colloquial Contraction (助詞)',
+    senses: [
+      "colloquial contraction of では or でしまう"
+    ]
+  },
+  'とく': {
+    posLabel: 'Colloquial Auxiliary (補助動詞)',
+    senses: [
+      "colloquial contraction of ておく (do in advance / leave as is)"
+    ]
+  },
+  'てる': {
+    posLabel: 'Colloquial Auxiliary (補助動詞)',
+    senses: [
+      "colloquial contraction of ている (ongoing action or resulting state)"
+    ]
   }
 };
 
@@ -1713,6 +1986,58 @@ function resolveLocalGrammarEntry(surface, basicForm, pos, posDetail) {
   if (JA_GRAMMAR_TOKEN_DICT[surface]) return JA_GRAMMAR_TOKEN_DICT[surface];
   if (basicForm && JA_GRAMMAR_TOKEN_DICT[basicForm]) return JA_GRAMMAR_TOKEN_DICT[basicForm];
   return null;
+}
+
+function resolveConjugationSuffixExplanation(sfx) {
+  if (!sfx) return null;
+  const surf = sfx.surface || '';
+  const basic = sfx.basic || surf;
+
+  // Voiced conjunctive で (e.g., 飲んで) vs location particle で
+  if (surf === 'で' && sfx.posDetail === '接続助詞') {
+    return {
+      title: "voiced te-form connector (links actions in sequence, 'and', 'by doing')",
+      sub: 'Conjunctive Particle (接続助詞)'
+    };
+  }
+
+  // Voiced past-tense だ (e.g., 読んだ) vs plain copula だ
+  if (surf === 'だ' && (basic === 'た' || sfx.pos === '助動詞')) {
+    return {
+      title: 'voiced past tense or completed action suffix (-ed, did)',
+      sub: 'Past Auxiliary (助動詞)'
+    };
+  }
+
+  const entry = JA_GRAMMAR_TOKEN_DICT[surf] || JA_GRAMMAR_TOKEN_DICT[basic];
+  if (entry && Array.isArray(entry.senses) && entry.senses.length > 0) {
+    return {
+      title: entry.senses[0],
+      sub: entry.posLabel || sfx.pos || ''
+    };
+  }
+
+  return {
+    title: basic !== surf ? `Conjugation ending (${basic})` : 'Conjugation ending',
+    sub: sfx.pos || ''
+  };
+}
+
+function buildConjugationBreakdownCards(mergedSuffixes) {
+  if (!Array.isArray(mergedSuffixes) || mergedSuffixes.length === 0) return [];
+  const cards = [];
+  for (const sfx of mergedSuffixes) {
+    if (!sfx || !sfx.surface) continue;
+    const info = resolveConjugationSuffixExplanation(sfx);
+    if (!info) continue;
+    cards.push({
+      literal: `+${sfx.surface}`,
+      title: info.title,
+      meta: kanaToRomajiString(katakanaToHiragana(sfx.reading || sfx.surface)),
+      sub: info.sub
+    });
+  }
+  return cards;
 }
 
 function formatJotobaPosTag(posItem) {
@@ -1930,6 +2255,17 @@ async function lookupJapaneseTokenDict(tokenMeta) {
   const hasKanjiInSurface = KANJI_REGEX.test(surface);
   const data = await fetchJotobaDictionaryData(surface, basic, reading, pos, posDetail);
 
+  // Extract merged conjugation suffixes attached to this token (Option 3)
+  let mergedSuffixes = Array.isArray(tokenMeta.suffixes) ? tokenMeta.suffixes : [];
+  if (mergedSuffixes.length === 0 && typeof lastInspectedTokenEl !== 'undefined' && lastInspectedTokenEl) {
+    const rawSuffixAttr = lastInspectedTokenEl.getAttribute('data-suffixes');
+    if (rawSuffixAttr) {
+      try {
+        mergedSuffixes = JSON.parse(rawSuffixAttr);
+      } catch (_) {}
+    }
+  }
+
   const badges = [];
   if (basic && basic !== surface) badges.push(`Root: ${basic}`);
 
@@ -1955,7 +2291,7 @@ async function lookupJapaneseTokenDict(tokenMeta) {
     }
   }
 
-  const charBreakdown = [];
+  const charBreakdown = buildConjugationBreakdownCards(mergedSuffixes);
   if (hasKanjiInSurface && Array.isArray(data.kanjiDetails)) {
     for (const k of data.kanjiDetails) {
       const meanings = (k.meanings || []).join(', ') || 'Kanji';
