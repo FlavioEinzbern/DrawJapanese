@@ -132,7 +132,7 @@ body.box2-focused #romanized-backdrop,
 }
 
 /* ==========================================================================
-   Synchronized Cross-Box Highlighting & Inline Dictionary Toggle Button
+   Synchronized Cross-Box Highlighting & 3-Way Dictionary Toggle Button
    ========================================================================== */
 .box1-token,
 .box2-seg {
@@ -152,7 +152,7 @@ body.box2-focused #romanized-backdrop,
   font-weight: 600;
 }
 
-/* Dictionary Button (Same line as Space/⌫/Clear/Copy in normal mode, compact above Box 1 in Portrait Fullscreen) */
+/* 3-Way Dictionary Button: 📖 🔓 (ON + Unlocked) | 📖 🔒 (ON + Locked) | 📖 OFF */
 #btn-inspect-dict {
   display: inline-flex;
   align-items: center;
@@ -181,26 +181,49 @@ body.box2-focused #romanized-backdrop,
   color: #1e293b;
 }
 
-#btn-inspect-dict.inspect-active {
+#btn-inspect-dict.inspect-unlocked {
+  background-color: #059669;
+  border-color: #047857;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.3);
+}
+
+#btn-inspect-dict.inspect-unlocked:hover {
+  background-color: #047857;
+  color: #ffffff;
+}
+
+#btn-inspect-dict.inspect-locked {
   background-color: #4f46e5;
   border-color: #4338ca;
   color: #ffffff;
   box-shadow: 0 2px 8px rgba(79, 70, 229, 0.35);
 }
 
-/* When Dictionary Inspect Mode is ON, disable textarea focus and make tokens tappable */
-body.inspect-mode-active #text-output-box {
+#btn-inspect-dict.inspect-locked:hover {
+  background-color: #4338ca;
+  color: #ffffff;
+}
+
+/* ON + Locked: disable Box 1 textarea editing and make word tokens directly tappable */
+body.inspect-mode-locked #text-output-box {
   pointer-events: none !important;
 }
 
-body.inspect-mode-active #furigana-backdrop {
+body.inspect-mode-locked #furigana-backdrop {
   pointer-events: auto !important;
   cursor: pointer;
 }
 
-body.inspect-mode-active #box1-wrapper {
+body.inspect-mode-locked #box1-wrapper {
   border-color: #6366f1 !important;
   box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.35);
+}
+
+/* ON + Unlocked: keep Box 1 editable while visually signaling dictionary is active */
+body.inspect-mode-unlocked #box1-wrapper {
+  border-color: #10b981 !important;
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.25);
 }
 
 /* Multi-Language Rikaichamp/Yomitan-Style Floating Popover */
@@ -609,10 +632,24 @@ body.dark-mode #btn-inspect-dict:hover {
   color: #ffffff;
 }
 
-body.dark-mode #btn-inspect-dict.inspect-active {
+body.dark-mode #btn-inspect-dict.inspect-unlocked {
+  background-color: #059669;
+  border-color: #10b981;
+  color: #ffffff;
+}
+
+body.dark-mode #btn-inspect-dict.inspect-unlocked:hover {
+  background-color: #047857;
+}
+
+body.dark-mode #btn-inspect-dict.inspect-locked {
   background-color: #6366f1;
   border-color: #818cf8;
   color: #ffffff;
+}
+
+body.dark-mode #btn-inspect-dict.inspect-locked:hover {
+  background-color: #4f46e5;
 }
 
 body.dark-mode #jotoba-dict-popover {
