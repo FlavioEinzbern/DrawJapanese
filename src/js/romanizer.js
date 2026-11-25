@@ -4,9 +4,21 @@
    ========================================================================== */
 let alignedSegments = [];
 let imeSuggestRequestId = 0;
-let isInspectModeActive = false;
+
+/* 3-Way Dictionary Inspect Mode: 'on-unlocked' | 'on-locked' | 'off' */
+const DICT_INSPECT_MODES = ['on-unlocked', 'on-locked', 'off'];
+function getInitialDictInspectMode() {
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    return window.matchMedia('(orientation: portrait)').matches ? 'on-locked' : 'on-unlocked';
+  }
+  return 'on-unlocked';
+}
+
+let dictInspectMode = getInitialDictInspectMode();
+let isInspectModeActive = dictInspectMode !== 'off';
 let activeHoveredSegIdx = null;
 let lastInspectedTokenEl = null;
+let lastKnownBox1Text = '';
 let dictHoverHideTimer = null;
 let dictLookupRequestId = 0;
 let isDictAndHighlightInitialized = false;
@@ -96,9 +108,9 @@ const APP_UI_STRINGS = {
       recognizedText: 'Recognized Text',
       charSingular: 'char',
       charPlural: 'chars',
-      dictOn: 'Dictionary: ON',
-      dictOff: 'Dictionary: OFF',
-      dictTitle: 'Toggle Dictionary (Hover on Desktop / Tap on Mobile)',
+      dictUnlockedTitle: 'Dictionary: ON — Box Unlocked (Hover/Tap & Edit)',
+      dictLockedTitle: 'Dictionary: ON — Box Locked (Tap/Hover to Inspect)',
+      dictOffTitle: 'Dictionary: OFF — Box Unlocked',
       space: 'Space',
       spaceTitle: 'Insert Space',
       backspaceTitle: 'Backspace',
@@ -163,9 +175,9 @@ const APP_UI_STRINGS = {
       recognizedText: 'Texto reconocido',
       charSingular: 'carácter',
       charPlural: 'caracteres',
-      dictOn: 'Diccionario: ON',
-      dictOff: 'Diccionario: OFF',
-      dictTitle: 'Alternar diccionario (Pasar el ratón en PC / Tocar en móvil)',
+      dictUnlockedTitle: 'Diccionario: ON — Caja desbloqueada (Inspeccionar y editar)',
+      dictLockedTitle: 'Diccionario: ON — Caja bloqueada (Tocar para inspeccionar)',
+      dictOffTitle: 'Diccionario: OFF — Caja desbloqueada',
       space: 'Espacio',
       spaceTitle: 'Insertar espacio',
       backspaceTitle: 'Retroceso',
@@ -230,9 +242,9 @@ const APP_UI_STRINGS = {
       recognizedText: 'Texto reconhecido',
       charSingular: 'caractere',
       charPlural: 'caracteres',
-      dictOn: 'Dicionário: ON',
-      dictOff: 'Dicionário: OFF',
-      dictTitle: 'Alternar dicionário (Passar o mouse no PC / Tocar no celular)',
+      dictUnlockedTitle: 'Dicionário: ON — Caixa desbloqueada (Inspecionar e editar)',
+      dictLockedTitle: 'Dicionário: ON — Caixa bloqueada (Tocar para inspecionar)',
+      dictOffTitle: 'Dicionário: OFF — Caixa desbloqueada',
       space: 'Espaço',
       spaceTitle: 'Inserir espaço',
       backspaceTitle: 'Apagar',
@@ -370,12 +382,7 @@ function applyAppLanguageUI() {
     charCount.textContent = formatCharCountText(textOutputBox.value.length);
   }
 
-  const dictBtn = document.getElementById('btn-inspect-dict');
-  const dictBtnLabel = document.getElementById('btn-inspect-dict-label');
-  if (dictBtn) dictBtn.title = ui.boxes.dictTitle;
-  if (dictBtnLabel) {
-    dictBtnLabel.textContent = isInspectModeActive ? ui.boxes.dictOn : ui.boxes.dictOff;
-  }
+  updateDictInspectButtonUI();
 
   const spaceBtn = document.getElementById('btn-add-space');
   if (spaceBtn) {
@@ -660,6 +667,7 @@ function clearAlignedSegmentsAndSuggestions() {
 }
 
 async function handleBox2Input() {
+  hideDictionaryPopover();
   const rawBox2 = romanizedOutputBox.value;
   const backdrop = getBox2Backdrop();
 
@@ -670,6 +678,7 @@ async function handleBox2Input() {
 
   if (!rawBox2.trim()) {
     textOutputBox.value = '';
+    lastKnownBox1Text = '';
     furiganaBackdrop.innerHTML = '';
     charCount.textContent = formatCharCountText(0);
     clearAlignedSegmentsAndSuggestions();
@@ -682,6 +691,7 @@ async function handleBox2Input() {
 
   const newBox1Text = prefixSrc + convertedMiddle + suffixSrc;
   textOutputBox.value = newBox1Text;
+  lastKnownBox1Text = newBox1Text;
   charCount.textContent = formatCharCountText(newBox1Text.length);
 
   if (currentLang === 'ja') {
@@ -759,6 +769,7 @@ async function updateChineseTypingSuggestions(rawPinyin, replaceSpec) {
       if (replaceSpec.liveUpdateBox1 && merged[0] && document.activeElement === romanizedOutputBox) {
         const nextBox1 = (replaceSpec.prefixSrc || '') + merged[0] + (replaceSpec.suffixSrc || '');
         textOutputBox.value = nextBox1;
+        lastKnownBox1Text = nextBox1;
         charCount.textContent = formatCharCountText(nextBox1.length);
         const zhBuilt = buildChineseAlignedSegmentsAndBackdrop(nextBox1);
         furiganaBackdrop.innerHTML = zhBuilt.backdropHtml;
@@ -832,6 +843,7 @@ function applyImeSuggestion(suggestion, replaceRange) {
   textOutputBox.value = nextText;
   const newCursorPos = before.length + suggestion.length;
 
+  hideDictionaryPopover();
   showTypingSuggestions([], null);
   updateRomanization(false, true).then(() => {
     if (wasBox2Focused) {
@@ -1306,7 +1318,6 @@ async function translateBatchEnToTarget(stringsArray, targetLang, timeoutMs = 24
       return output;
     }
 
-    // Fallback if markers were altered: match line-by-line without stripping blanks
     const splitLines = fullTrans.split('\n').map(s => s.trim());
     nonEmptyEntries.forEach((entry, i) => {
       if (splitLines[i]) output[entry.origIdx] = splitLines[i];
@@ -1462,8 +1473,41 @@ async function buildLocalizedDictionaryData(tokenMeta) {
 }
 
 /* ==========================================================================
-   Unified Multi-Language Dictionary Popover & Cross-Box Highlighting
+   3-Way Dictionary Toggle, Popover & Cross-Box Highlighting
    ========================================================================== */
+function normalizeDictInspectMode(mode) {
+  if (mode === true) return 'on-locked';
+  if (mode === false) return 'off';
+  return DICT_INSPECT_MODES.includes(mode) ? mode : 'off';
+}
+
+function getDictInspectModeTitle(mode) {
+  const ui = getAppStrings().boxes;
+  if (mode === 'on-unlocked') return ui.dictUnlockedTitle;
+  if (mode === 'on-locked') return ui.dictLockedTitle;
+  return ui.dictOffTitle;
+}
+
+function getDictInspectModeCompactLabel(mode) {
+  if (mode === 'on-unlocked') return '🔓';
+  if (mode === 'on-locked') return '🔒';
+  return 'OFF';
+}
+
+function updateDictInspectButtonUI() {
+  const btn = document.getElementById('btn-inspect-dict');
+  const label = document.getElementById('btn-inspect-dict-label');
+  if (!btn || !label) return;
+
+  btn.classList.toggle('inspect-unlocked', dictInspectMode === 'on-unlocked');
+  btn.classList.toggle('inspect-locked', dictInspectMode === 'on-locked');
+  label.textContent = getDictInspectModeCompactLabel(dictInspectMode);
+
+  const titleText = getDictInspectModeTitle(dictInspectMode);
+  btn.title = titleText;
+  btn.setAttribute('aria-label', titleText);
+}
+
 function ensureDictInspectBar() {
   ensureDictLangHeaderButton();
 
@@ -1476,49 +1520,53 @@ function ensureDictInspectBar() {
   if (!btn) {
     const addSpaceBtn = document.getElementById('btn-add-space');
     if (addSpaceBtn && addSpaceBtn.parentNode) {
-      const ui = getAppStrings().boxes;
       btn = document.createElement('button');
       btn.id = 'btn-inspect-dict';
       btn.type = 'button';
-      btn.title = ui.dictTitle;
       btn.innerHTML = `
         <span>📖</span>
-        <span id="btn-inspect-dict-label">${escapeHtml(isInspectModeActive ? ui.dictOn : ui.dictOff)}</span>
+        <span id="btn-inspect-dict-label">${getDictInspectModeCompactLabel(dictInspectMode)}</span>
       `;
       addSpaceBtn.parentNode.insertBefore(btn, addSpaceBtn);
 
+      btn.addEventListener('mousedown', (e) => e.stopPropagation());
+      btn.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
       btn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        setInspectMode(!isInspectModeActive);
+        const currIdx = DICT_INSPECT_MODES.indexOf(dictInspectMode);
+        const nextMode = DICT_INSPECT_MODES[(currIdx + 1) % DICT_INSPECT_MODES.length];
+        setInspectMode(nextMode, true);
       });
     }
   }
 
   if (btn) {
     btn.classList.remove('hidden');
+    updateDictInspectButtonUI();
   }
 }
 
-function setInspectMode(enabled) {
-  isInspectModeActive = Boolean(enabled);
-  document.body.classList.toggle('inspect-mode-active', isInspectModeActive);
+function setInspectMode(mode, showFeedback = false) {
+  dictInspectMode = normalizeDictInspectMode(mode);
+  isInspectModeActive = dictInspectMode !== 'off';
 
-  const btn = document.getElementById('btn-inspect-dict');
-  const label = document.getElementById('btn-inspect-dict-label');
-  const ui = getAppStrings().boxes;
+  document.body.classList.toggle('inspect-mode-locked', dictInspectMode === 'on-locked');
+  document.body.classList.toggle('inspect-mode-unlocked', dictInspectMode === 'on-unlocked');
+  document.body.classList.toggle('inspect-mode-active', dictInspectMode === 'on-locked');
 
-  if (btn && label) {
-    btn.classList.toggle('inspect-active', isInspectModeActive);
-    label.textContent = isInspectModeActive ? ui.dictOn : ui.dictOff;
-  }
+  updateDictInspectButtonUI();
 
-  if (isInspectModeActive) {
+  if (dictInspectMode === 'on-locked') {
     textOutputBox.blur();
     romanizedOutputBox.blur();
-  } else {
+  } else if (dictInspectMode === 'off') {
     hideDictionaryPopover();
     syncBox1SelectionToBox2();
+  }
+
+  if (showFeedback && typeof showToast === 'function') {
+    showToast(getDictInspectModeTitle(dictInspectMode));
   }
 }
 
@@ -1561,6 +1609,13 @@ function scheduleHideDictionaryPopover(delayMs = 180) {
   }, delayMs);
 }
 
+function hasActiveBox1TextSelection() {
+  if (document.activeElement !== textOutputBox) return false;
+  const selStart = textOutputBox.selectionStart ?? 0;
+  const selEnd = textOutputBox.selectionEnd ?? 0;
+  return selEnd > selStart;
+}
+
 function applySegmentHighlights(segIndicesSet) {
   const box1Tokens = furiganaBackdrop.querySelectorAll('.box1-token');
   box1Tokens.forEach((el) => {
@@ -1590,21 +1645,25 @@ function applySegmentHighlights(segIndicesSet) {
 
 function syncBox1SelectionToBox2() {
   const highlighted = new Set();
+  const hasSelection = hasActiveBox1TextSelection();
 
-  if (isInspectModeActive && activeHoveredSegIdx !== null) {
-    highlighted.add(Number(activeHoveredSegIdx));
-  }
-
-  if (document.activeElement === textOutputBox) {
+  if (hasSelection) {
     const selStart = textOutputBox.selectionStart ?? 0;
     const selEnd = textOutputBox.selectionEnd ?? 0;
-    if (selEnd > selStart) {
-      for (const seg of alignedSegments) {
-        if (seg && seg.rom && !seg.isNewline && seg.start < selEnd && seg.end > selStart) {
-          highlighted.add(seg.idx);
-        }
+    for (const seg of alignedSegments) {
+      if (seg && seg.rom && !seg.isNewline && seg.start < selEnd && seg.end > selStart) {
+        highlighted.add(seg.idx);
       }
     }
+    const pop = document.getElementById('jotoba-dict-popover');
+    if (pop && !pop.classList.contains('hidden')) {
+      clearTimeout(dictHoverHideTimer);
+      activeHoveredSegIdx = null;
+      lastInspectedTokenEl = null;
+      pop.classList.add('hidden');
+    }
+  } else if (isInspectModeActive && activeHoveredSegIdx !== null) {
+    highlighted.add(Number(activeHoveredSegIdx));
   }
 
   applySegmentHighlights(highlighted);
@@ -1815,6 +1874,7 @@ function initDictionaryAndCrossBoxHighlight() {
 
   ensureDictInspectBar();
   ensureDictionaryPopoverElement();
+  setInspectMode(dictInspectMode, false);
   applyAppLanguageUI();
 
   const syncEvents = ['select', 'keyup', 'mouseup', 'touchend'];
@@ -1822,6 +1882,20 @@ function initDictionaryAndCrossBoxHighlight() {
     textOutputBox.addEventListener(evt, () => {
       requestAnimationFrame(syncBox1SelectionToBox2);
     });
+  });
+
+  // As soon as anything is written in Box 1 (including IME composition), hide the popover
+  ['input', 'compositionstart', 'compositionupdate'].forEach((evt) => {
+    textOutputBox.addEventListener(evt, () => {
+      hideDictionaryPopover();
+    });
+  });
+
+  textOutputBox.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Enter') {
+      hideDictionaryPopover();
+    }
   });
 
   document.addEventListener('selectionchange', () => {
@@ -1833,7 +1907,7 @@ function initDictionaryAndCrossBoxHighlight() {
   if (box1Wrapper) {
     box1Wrapper.addEventListener('mousemove', (e) => {
       if (!isInspectModeActive) return;
-      if (e.buttons !== 0) return;
+      if (e.buttons !== 0 || hasActiveBox1TextSelection()) return;
 
       const hitToken = findBox1TokenAtPoint(e.clientX, e.clientY);
       if (hitToken) {
@@ -1856,11 +1930,36 @@ function initDictionaryAndCrossBoxHighlight() {
 
     box1Wrapper.addEventListener('click', (e) => {
       if (!isInspectModeActive) return;
-      const hitToken = e.target.closest('.box1-token') || findBox1TokenAtPoint(e.clientX, e.clientY);
+
+      if (dictInspectMode === 'on-locked') {
+        const hitToken = e.target.closest('.box1-token') || findBox1TokenAtPoint(e.clientX, e.clientY);
+        if (hitToken) {
+          e.preventDefault();
+          e.stopPropagation();
+          triggerTokenDictionaryLookup(hitToken);
+        }
+        return;
+      }
+
+      // ON + Unlocked: let Box 1 focus/open keyboard naturally while showing the popover for the tapped word
+      if (hasActiveBox1TextSelection()) {
+        hideDictionaryPopover();
+        return;
+      }
+
+      const hitToken = findBox1TokenAtPoint(e.clientX, e.clientY);
       if (hitToken) {
-        e.preventDefault();
-        e.stopPropagation();
-        triggerTokenDictionaryLookup(hitToken);
+        const hitIdx = Number(hitToken.getAttribute('data-seg-idx'));
+        const pop = document.getElementById('jotoba-dict-popover');
+        const isSameVisible = pop && !pop.classList.contains('hidden') && hitIdx === activeHoveredSegIdx;
+        if (isSameVisible) {
+          clearTimeout(dictHoverHideTimer);
+          positionDictionaryPopover(hitToken.getBoundingClientRect());
+        } else {
+          triggerTokenDictionaryLookup(hitToken);
+        }
+      } else {
+        hideDictionaryPopover();
       }
     });
   }
@@ -1906,6 +2005,11 @@ async function updateRomanization(triggerSuggestions = false, forceSyncBox2 = fa
   ensureDictInspectBar();
 
   const text = textOutputBox.value;
+  if (text !== lastKnownBox1Text) {
+    lastKnownBox1Text = text;
+    hideDictionaryPopover();
+  }
+
   const conversionId = ++currentConversionId;
   charCount.textContent = formatCharCountText(text.length);
 
