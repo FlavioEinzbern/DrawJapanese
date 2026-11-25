@@ -25,6 +25,18 @@ let isDictAndHighlightInitialized = false;
 let currentConversionId = 0;
 let lastEngineStatusType = 'loading';
 
+/* 3-Way Hover/Tap Translation Mode: 'on-unlocked' | 'on-locked' | 'off' (Starts OFF) */
+const TRANSLATE_HOVER_MODES = ['on-unlocked', 'on-locked', 'off'];
+let translateHoverMode = 'off';
+let isTranslateModeActive = false;
+let activeTranslatedSegIndices = new Set();
+let activeTranslatedSpanKey = null;
+let lastTranslatedContext = null;
+let translateHoverDebounceTimer = null;
+let translateSelectionDebounceTimer = null;
+let translateLookupRequestId = 0;
+const HOVER_TRANSLATION_CACHE = new Map();
+
 /* ==========================================================================
    Full-App & Dictionary Localization ('en' | 'es' | 'pt') + Browser Detection
    ========================================================================== */
@@ -38,7 +50,12 @@ const DICT_TARGET_META = {
     searching: 'Searching dictionary...',
     notFound: 'No exact entry found for',
     closeLabel: 'Close dictionary',
-    breakdownLabel: 'Word Breakdown'
+    breakdownLabel: 'Word Breakdown',
+    translating: 'Translating...',
+    translateTitle: 'Translation',
+    translateSelectionBadge: 'Selection',
+    translateSentenceBadge: 'Sentence',
+    translateFailed: 'Unable to translate this text right now.'
   },
   es: {
     code: 'ES',
@@ -47,7 +64,12 @@ const DICT_TARGET_META = {
     searching: 'Buscando en el diccionario...',
     notFound: 'No se encontró entrada exacta para',
     closeLabel: 'Cerrar diccionario',
-    breakdownLabel: 'Desglose gramatical'
+    breakdownLabel: 'Desglose gramatical',
+    translating: 'Traduciendo...',
+    translateTitle: 'Traducción',
+    translateSelectionBadge: 'Selección',
+    translateSentenceBadge: 'Oración',
+    translateFailed: 'No se pudo traducir este texto en este momento.'
   },
   pt: {
     code: 'PT',
@@ -56,7 +78,12 @@ const DICT_TARGET_META = {
     searching: 'Pesquisando no dicionário...',
     notFound: 'Nenhuma entrada exata encontrada para',
     closeLabel: 'Fechar dicionário',
-    breakdownLabel: 'Análise gramatical'
+    breakdownLabel: 'Análise gramatical',
+    translating: 'Traduzindo...',
+    translateTitle: 'Tradução',
+    translateSelectionBadge: 'Seleção',
+    translateSentenceBadge: 'Frase',
+    translateFailed: 'Não foi possível traduzir este texto no momento.'
   }
 };
 
@@ -111,6 +138,9 @@ const APP_UI_STRINGS = {
       dictUnlockedTitle: 'Dictionary: ON — Box Unlocked (Hover/Tap & Edit)',
       dictLockedTitle: 'Dictionary: ON — Box Locked (Tap/Hover to Inspect)',
       dictOffTitle: 'Dictionary: OFF — Box Unlocked',
+      translateUnlockedTitle: 'Translate: ON — Box Unlocked (Select or Hover/Tap Sentence)',
+      translateLockedTitle: 'Translate: ON — Box Locked (Hover/Tap Sentence)',
+      translateOffTitle: 'Translate: OFF',
       space: 'Space',
       spaceTitle: 'Insert Space',
       backspaceTitle: 'Backspace',
@@ -178,6 +208,9 @@ const APP_UI_STRINGS = {
       dictUnlockedTitle: 'Diccionario: ON — Caja desbloqueada (Inspeccionar y editar)',
       dictLockedTitle: 'Diccionario: ON — Caja bloqueada (Tocar para inspeccionar)',
       dictOffTitle: 'Diccionario: OFF — Caja desbloqueada',
+      translateUnlockedTitle: 'Traducción: ON — Caja desbloqueada (Seleccionar o pasar/tocar oración)',
+      translateLockedTitle: 'Traducción: ON — Caja bloqueada (Pasar/tocar oración)',
+      translateOffTitle: 'Traducción: OFF',
       space: 'Espacio',
       spaceTitle: 'Insertar espacio',
       backspaceTitle: 'Retroceso',
@@ -245,6 +278,9 @@ const APP_UI_STRINGS = {
       dictUnlockedTitle: 'Dicionário: ON — Caixa desbloqueada (Inspecionar e editar)',
       dictLockedTitle: 'Dicionário: ON — Caixa bloqueada (Tocar para inspecionar)',
       dictOffTitle: 'Dicionário: OFF — Caixa desbloqueada',
+      translateUnlockedTitle: 'Tradução: ON — Caixa desbloqueada (Selecionar ou passar/tocar frase)',
+      translateLockedTitle: 'Tradução: ON — Caixa bloqueada (Passar/tocar frase)',
+      translateOffTitle: 'Tradução: OFF',
       space: 'Espaço',
       spaceTitle: 'Inserir espaço',
       backspaceTitle: 'Apagar',
@@ -383,6 +419,7 @@ function applyAppLanguageUI() {
   }
 
   updateDictInspectButtonUI();
+  updateTranslateButtonUI();
 
   const spaceBtn = document.getElementById('btn-add-space');
   if (spaceBtn) {
@@ -880,8 +917,12 @@ function selectAppAndDictLanguage(newLang) {
   }
 
   const pop = document.getElementById('jotoba-dict-popover');
-  if (pop && !pop.classList.contains('hidden') && lastInspectedTokenEl && document.body.contains(lastInspectedTokenEl)) {
-    triggerTokenDictionaryLookup(lastInspectedTokenEl);
+  if (pop && !pop.classList.contains('hidden')) {
+    if (isInspectModeActive && lastInspectedTokenEl && document.body.contains(lastInspectedTokenEl)) {
+      triggerTokenDictionaryLookup(lastInspectedTokenEl);
+    } else if (isTranslateModeActive && lastTranslatedContext) {
+      triggerHoverTranslationPopover(lastTranslatedContext);
+    }
   }
 }
 
@@ -1330,6 +1371,100 @@ async function translateBatchEnToTarget(stringsArray, targetLang, timeoutMs = 24
   }
 }
 
+/* ==========================================================================
+   API Option 3: Hover/Tap Translation Engine (Google GTX + Lingva Fallback)
+   ========================================================================== */
+const LINGVA_PUBLIC_INSTANCES = [
+  'https://lingva.ml',
+  'https://lingva.thedaviddelta.com',
+  'https://translate.plausibility.cloud',
+  'https://lingva.lunar.icu'
+];
+let lingvaInstanceCursor = 0;
+
+async function fetchGoogleGtxPlainTranslation(sourceLang, text, targetLang, timeoutMs = 2600) {
+  const slMap = { ja: 'ja', zh: 'zh-CN', ko: 'ko', ru: 'ru' };
+  const sl = slMap[sourceLang] || sourceLang;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(sl)}&tl=${encodeURIComponent(targetLang)}&dt=t&dj=1&q=${encodeURIComponent(text)}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      mode: 'cors',
+      credentials: 'omit',
+      signal: controller.signal
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || !Array.isArray(data.sentences)) return null;
+    const translated = data.sentences.map(s => (s && s.trans) ? s.trans : '').join('').trim();
+    return translated || null;
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchLingvaTranslation(sourceLang, text, targetLang, timeoutMs = 2600) {
+  const slMap = { ja: 'ja', zh: 'zh', ko: 'ko', ru: 'ru' };
+  const sl = slMap[sourceLang] || sourceLang;
+  const total = LINGVA_PUBLIC_INSTANCES.length;
+
+  for (let attempt = 0; attempt < total; attempt++) {
+    const idx = (lingvaInstanceCursor + attempt) % total;
+    const baseUrl = LINGVA_PUBLIC_INSTANCES[idx];
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const url = `${baseUrl}/api/v1/${encodeURIComponent(sl)}/${encodeURIComponent(targetLang)}/${encodeURIComponent(text)}`;
+      const res = await fetch(url, {
+        method: 'GET',
+        mode: 'cors',
+        credentials: 'omit',
+        signal: controller.signal
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data && typeof data.translation === 'string' && data.translation.trim()) {
+        lingvaInstanceCursor = idx;
+        return data.translation.trim();
+      }
+    } catch (_) {
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return null;
+}
+
+async function fetchHoverTranslation(sourceLang, rawText, targetLang) {
+  const cleanText = String(rawText || '').trim();
+  if (!cleanText) return null;
+
+  const cacheKey = `${sourceLang}|${targetLang}|${cleanText}`;
+  if (HOVER_TRANSLATION_CACHE.has(cacheKey)) {
+    return HOVER_TRANSLATION_CACHE.get(cacheKey);
+  }
+
+  const gtxResult = await fetchGoogleGtxPlainTranslation(sourceLang, cleanText, targetLang);
+  if (gtxResult) {
+    const payload = { translation: gtxResult, provider: 'Google' };
+    HOVER_TRANSLATION_CACHE.set(cacheKey, payload);
+    return payload;
+  }
+
+  const lingvaResult = await fetchLingvaTranslation(sourceLang, cleanText, targetLang);
+  if (lingvaResult) {
+    const payload = { translation: lingvaResult, provider: 'Lingva' };
+    HOVER_TRANSLATION_CACHE.set(cacheKey, payload);
+    return payload;
+  }
+
+  return null;
+}
+
 /* Hybrid Coordinator: Combines Base Specialized Dict + Direct Target Dict + Batch Translation */
 async function buildLocalizedDictionaryData(tokenMeta) {
   const { surface, basic, reading, pos, posDetail, stem, suffixes, prevToken, nextToken } = tokenMeta;
@@ -1473,7 +1608,7 @@ async function buildLocalizedDictionaryData(tokenMeta) {
 }
 
 /* ==========================================================================
-   3-Way Dictionary Toggle, Popover & Cross-Box Highlighting
+   3-Way Dictionary Toggle, 3-Way Translation Toggle & Cross-Box Highlighting
    ========================================================================== */
 function normalizeDictInspectMode(mode) {
   if (mode === true) return 'on-locked';
@@ -1481,11 +1616,24 @@ function normalizeDictInspectMode(mode) {
   return DICT_INSPECT_MODES.includes(mode) ? mode : 'off';
 }
 
+function normalizeTranslateHoverMode(mode) {
+  if (mode === true) return 'on-locked';
+  if (mode === false) return 'off';
+  return TRANSLATE_HOVER_MODES.includes(mode) ? mode : 'off';
+}
+
 function getDictInspectModeTitle(mode) {
   const ui = getAppStrings().boxes;
   if (mode === 'on-unlocked') return ui.dictUnlockedTitle;
   if (mode === 'on-locked') return ui.dictLockedTitle;
   return ui.dictOffTitle;
+}
+
+function getTranslateHoverModeTitle(mode) {
+  const ui = getAppStrings().boxes;
+  if (mode === 'on-unlocked') return ui.translateUnlockedTitle;
+  if (mode === 'on-locked') return ui.translateLockedTitle;
+  return ui.translateOffTitle;
 }
 
 function getDictInspectModeCompactLabel(mode) {
@@ -1504,6 +1652,20 @@ function updateDictInspectButtonUI() {
   label.textContent = getDictInspectModeCompactLabel(dictInspectMode);
 
   const titleText = getDictInspectModeTitle(dictInspectMode);
+  btn.title = titleText;
+  btn.setAttribute('aria-label', titleText);
+}
+
+function updateTranslateButtonUI() {
+  const btn = document.getElementById('btn-translate-hover');
+  const label = document.getElementById('btn-translate-hover-label');
+  if (!btn || !label) return;
+
+  btn.classList.toggle('translate-unlocked', translateHoverMode === 'on-unlocked');
+  btn.classList.toggle('translate-locked', translateHoverMode === 'on-locked');
+  label.textContent = getDictInspectModeCompactLabel(translateHoverMode);
+
+  const titleText = getTranslateHoverModeTitle(translateHoverMode);
   btn.title = titleText;
   btn.setAttribute('aria-label', titleText);
 }
@@ -1541,15 +1703,45 @@ function ensureDictInspectBar() {
     }
   }
 
+  let transBtn = document.getElementById('btn-translate-hover');
+  if (!transBtn && btn && btn.parentNode) {
+    transBtn = document.createElement('button');
+    transBtn.id = 'btn-translate-hover';
+    transBtn.type = 'button';
+    transBtn.innerHTML = `
+      <span>💬</span>
+      <span id="btn-translate-hover-label">${getDictInspectModeCompactLabel(translateHoverMode)}</span>
+    `;
+    btn.parentNode.insertBefore(transBtn, btn);
+
+    transBtn.addEventListener('mousedown', (e) => e.stopPropagation());
+    transBtn.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+    transBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const currIdx = TRANSLATE_HOVER_MODES.indexOf(translateHoverMode);
+      const nextMode = TRANSLATE_HOVER_MODES[(currIdx + 1) % TRANSLATE_HOVER_MODES.length];
+      setTranslateMode(nextMode, true);
+    });
+  }
+
   if (btn) {
     btn.classList.remove('hidden');
     updateDictInspectButtonUI();
+  }
+  if (transBtn) {
+    transBtn.classList.remove('hidden');
+    updateTranslateButtonUI();
   }
 }
 
 function setInspectMode(mode, showFeedback = false) {
   dictInspectMode = normalizeDictInspectMode(mode);
   isInspectModeActive = dictInspectMode !== 'off';
+
+  if (isInspectModeActive && translateHoverMode !== 'off') {
+    setTranslateMode('off', false);
+  }
 
   document.body.classList.toggle('inspect-mode-locked', dictInspectMode === 'on-locked');
   document.body.classList.toggle('inspect-mode-unlocked', dictInspectMode === 'on-unlocked');
@@ -1567,6 +1759,35 @@ function setInspectMode(mode, showFeedback = false) {
 
   if (showFeedback && typeof showToast === 'function') {
     showToast(getDictInspectModeTitle(dictInspectMode));
+  }
+}
+
+function setTranslateMode(mode, showFeedback = false) {
+  translateHoverMode = normalizeTranslateHoverMode(mode);
+  isTranslateModeActive = translateHoverMode !== 'off';
+
+  if (isTranslateModeActive && dictInspectMode !== 'off') {
+    setInspectMode('off', false);
+  }
+
+  document.body.classList.toggle('translate-mode-locked', translateHoverMode === 'on-locked');
+  document.body.classList.toggle('translate-mode-unlocked', translateHoverMode === 'on-unlocked');
+
+  updateTranslateButtonUI();
+
+  if (translateHoverMode === 'on-locked') {
+    textOutputBox.blur();
+    romanizedOutputBox.blur();
+    hideDictionaryPopover();
+  } else if (translateHoverMode === 'off') {
+    hideDictionaryPopover();
+    syncBox1SelectionToBox2();
+  } else {
+    hideDictionaryPopover();
+  }
+
+  if (showFeedback && typeof showToast === 'function') {
+    showToast(getTranslateHoverModeTitle(translateHoverMode));
   }
 }
 
@@ -1593,8 +1814,13 @@ function ensureDictionaryPopoverElement() {
 
 function hideDictionaryPopover() {
   clearTimeout(dictHoverHideTimer);
+  clearTimeout(translateHoverDebounceTimer);
+  clearTimeout(translateSelectionDebounceTimer);
   activeHoveredSegIdx = null;
   lastInspectedTokenEl = null;
+  activeTranslatedSegIndices = new Set();
+  activeTranslatedSpanKey = null;
+  lastTranslatedContext = null;
   const pop = document.getElementById('jotoba-dict-popover');
   if (pop) {
     pop.classList.add('hidden');
@@ -1655,15 +1881,19 @@ function syncBox1SelectionToBox2() {
         highlighted.add(seg.idx);
       }
     }
-    const pop = document.getElementById('jotoba-dict-popover');
-    if (pop && !pop.classList.contains('hidden')) {
-      clearTimeout(dictHoverHideTimer);
-      activeHoveredSegIdx = null;
-      lastInspectedTokenEl = null;
-      pop.classList.add('hidden');
+    if (isInspectModeActive) {
+      const pop = document.getElementById('jotoba-dict-popover');
+      if (pop && !pop.classList.contains('hidden')) {
+        clearTimeout(dictHoverHideTimer);
+        activeHoveredSegIdx = null;
+        lastInspectedTokenEl = null;
+        pop.classList.add('hidden');
+      }
     }
   } else if (isInspectModeActive && activeHoveredSegIdx !== null) {
     highlighted.add(Number(activeHoveredSegIdx));
+  } else if (isTranslateModeActive && activeTranslatedSegIndices.size > 0) {
+    activeTranslatedSegIndices.forEach((idx) => highlighted.add(idx));
   }
 
   applySegmentHighlights(highlighted);
@@ -1730,6 +1960,253 @@ function getAdjacentBox1TokenMeta(tokenEl, direction) {
     return null;
   }
   return null;
+}
+
+/* ==========================================================================
+   Sentence & Selection Extraction for Hover/Tap Translation Mode
+   ========================================================================== */
+function isSentenceTerminatorAt(text, pos) {
+  const ch = text[pos];
+  if (!ch) return false;
+  if (ch === '\n' || ch === '。' || ch === '！' || ch === '？' || ch === '!' || ch === '?') {
+    return true;
+  }
+  if (ch === '.') {
+    const prev = pos > 0 ? text[pos - 1] : '';
+    const next = pos + 1 < text.length ? text[pos + 1] : '';
+    if (/[0-9]/.test(prev) && /[0-9]/.test(next)) return false;
+    return true;
+  }
+  return false;
+}
+
+function collectSegIndicesForRange(start, end) {
+  const set = new Set();
+  for (const seg of alignedSegments) {
+    if (seg && !seg.isNewline && seg.src && seg.src.trim() && seg.start < end && seg.end > start) {
+      set.add(seg.idx);
+    }
+  }
+  return set;
+}
+
+function getAnchorRectForSegIndices(segIndicesSet, fallbackEl = null) {
+  const box1Tokens = furiganaBackdrop.querySelectorAll('.box1-token');
+  let minLeft = Infinity;
+  let maxRight = -Infinity;
+  let minTop = Infinity;
+  let maxBottom = -Infinity;
+  let found = false;
+
+  box1Tokens.forEach((el) => {
+    const idx = Number(el.getAttribute('data-seg-idx'));
+    if (!segIndicesSet.has(idx)) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return;
+    found = true;
+    if (rect.left < minLeft) minLeft = rect.left;
+    if (rect.right > maxRight) maxRight = rect.right;
+    if (rect.top < minTop) minTop = rect.top;
+    if (rect.bottom > maxBottom) maxBottom = rect.bottom;
+  });
+
+  if (found) {
+    return {
+      left: minLeft,
+      right: maxRight,
+      top: minTop,
+      bottom: maxBottom,
+      width: Math.max(1, maxRight - minLeft),
+      height: Math.max(1, maxBottom - minTop)
+    };
+  }
+  if (fallbackEl && typeof fallbackEl.getBoundingClientRect === 'function') {
+    return fallbackEl.getBoundingClientRect();
+  }
+  return box1Wrapper ? box1Wrapper.getBoundingClientRect() : { left: 16, right: 200, top: 80, bottom: 120, width: 184, height: 40 };
+}
+
+function extractSentenceSpanForToken(tokenEl) {
+  if (!tokenEl) return null;
+  const fullText = textOutputBox.value || '';
+  if (!fullText.trim()) return null;
+
+  const segIdx = Number(tokenEl.getAttribute('data-seg-idx'));
+  const targetSeg = alignedSegments.find(s => s && s.idx === segIdx);
+  if (!targetSeg) {
+    const surf = (tokenEl.getAttribute('data-surface') || tokenEl.textContent || '').trim();
+    if (!surf) return null;
+    return {
+      text: surf,
+      start: 0,
+      end: surf.length,
+      segIndices: new Set([segIdx]),
+      scope: 'sentence',
+      key: `sent:tok:${segIdx}`,
+      anchorEl: tokenEl
+    };
+  }
+
+  let start = targetSeg.start;
+  while (start > 0) {
+    if (isSentenceTerminatorAt(fullText, start - 1)) break;
+    start--;
+  }
+
+  let end = targetSeg.end;
+  while (end < fullText.length) {
+    if (fullText[end] === '\n') break;
+    if (isSentenceTerminatorAt(fullText, end)) {
+      end++;
+      while (end < fullText.length && /^[」』）"'\]】》〕。！？!?]$/.test(fullText[end])) {
+        end++;
+      }
+      break;
+    }
+    end++;
+  }
+
+  while (start < end && /\s/.test(fullText[start])) start++;
+  while (end > start && /\s/.test(fullText[end - 1])) end--;
+
+  const sentenceText = fullText.slice(start, end).trim();
+  if (!sentenceText) return null;
+
+  const segIndices = collectSegIndicesForRange(start, end);
+  segIndices.add(segIdx);
+
+  return {
+    text: sentenceText,
+    start,
+    end,
+    segIndices,
+    scope: 'sentence',
+    key: `sent:${start}:${end}`,
+    anchorEl: tokenEl
+  };
+}
+
+function extractSelectionSpanForTranslation() {
+  if (!hasActiveBox1TextSelection()) return null;
+  const fullText = textOutputBox.value || '';
+  let start = textOutputBox.selectionStart ?? 0;
+  let end = textOutputBox.selectionEnd ?? 0;
+  while (start < end && /\s/.test(fullText[start])) start++;
+  while (end > start && /\s/.test(fullText[end - 1])) end--;
+
+  const selectedText = fullText.slice(start, end).trim();
+  if (!selectedText) return null;
+
+  const segIndices = collectSegIndicesForRange(start, end);
+  return {
+    text: selectedText,
+    start,
+    end,
+    segIndices,
+    scope: 'selection',
+    key: `sel:${start}:${end}`,
+    anchorEl: null
+  };
+}
+
+async function triggerHoverTranslationPopover(spanContext) {
+  if (!isTranslateModeActive || !spanContext || !spanContext.text) return;
+
+  clearTimeout(dictHoverHideTimer);
+  activeTranslatedSegIndices = new Set(spanContext.segIndices || []);
+  activeTranslatedSpanKey = spanContext.key;
+  lastTranslatedContext = spanContext;
+  syncBox1SelectionToBox2();
+
+  const reqId = ++translateLookupRequestId;
+  const pop = ensureDictionaryPopoverElement();
+  const langMeta = DICT_TARGET_META[dictTargetLang] || DICT_TARGET_META.en;
+  const scopeLabel = spanContext.scope === 'selection'
+    ? langMeta.translateSelectionBadge
+    : langMeta.translateSentenceBadge;
+  const srcLangCode = String(currentLang || '').toUpperCase();
+
+  const anchorRect = spanContext.anchorEl && document.body.contains(spanContext.anchorEl)
+    ? spanContext.anchorEl.getBoundingClientRect()
+    : getAnchorRectForSegIndices(activeTranslatedSegIndices, box1Wrapper);
+
+  const previewText = spanContext.text.length > 180
+    ? spanContext.text.slice(0, 180) + '…'
+    : spanContext.text;
+
+  pop.innerHTML = `
+    <div class="dict-popover-header">
+      <div>
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <span class="font-bold text-sm">${escapeHtml(langMeta.translateTitle)}</span>
+          <span class="dict-badge trans-badge-sky">${escapeHtml(scopeLabel)}</span>
+          <span class="dict-badge">${escapeHtml(srcLangCode)} → ${escapeHtml(langMeta.code)}</span>
+        </div>
+      </div>
+      <button type="button" class="dict-close-btn" aria-label="${escapeHtml(langMeta.closeLabel)}">✕</button>
+    </div>
+    <div class="trans-source-preview">${escapeHtml(previewText)}</div>
+    <div class="text-xs text-slate-400 animate-pulse py-1">${escapeHtml(langMeta.translating)}</div>
+  `;
+  pop.querySelector('.dict-close-btn').addEventListener('click', hideDictionaryPopover);
+  pop.classList.remove('hidden');
+  positionDictionaryPopover(anchorRect);
+
+  const result = await fetchHoverTranslation(currentLang, spanContext.text, dictTargetLang);
+  if (reqId !== translateLookupRequestId || !isTranslateModeActive) return;
+
+  const providerBadge = result && result.provider
+    ? `<span class="dict-badge">${escapeHtml(result.provider)}</span>`
+    : '';
+
+  const bodyHtml = result && result.translation
+    ? `<div class="trans-result-text">${escapeHtml(result.translation)}</div>`
+    : `<div class="text-xs opacity-75 py-0.5">${escapeHtml(langMeta.translateFailed)}</div>`;
+
+  pop.innerHTML = `
+    <div class="dict-popover-header">
+      <div>
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <span class="font-bold text-sm">${escapeHtml(langMeta.translateTitle)}</span>
+          <span class="dict-badge trans-badge-sky">${escapeHtml(scopeLabel)}</span>
+          <span class="dict-badge">${escapeHtml(srcLangCode)} → ${escapeHtml(langMeta.code)}</span>
+          ${providerBadge}
+        </div>
+      </div>
+      <button type="button" class="dict-close-btn" aria-label="${escapeHtml(langMeta.closeLabel)}">✕</button>
+    </div>
+    <div class="trans-source-preview">${escapeHtml(previewText)}</div>
+    ${bodyHtml}
+  `;
+  pop.querySelector('.dict-close-btn').addEventListener('click', hideDictionaryPopover);
+
+  const updatedAnchorRect = spanContext.anchorEl && document.body.contains(spanContext.anchorEl)
+    ? spanContext.anchorEl.getBoundingClientRect()
+    : getAnchorRectForSegIndices(activeTranslatedSegIndices, box1Wrapper);
+  positionDictionaryPopover(updatedAnchorRect);
+}
+
+function scheduleSelectionTranslation() {
+  if (translateHoverMode !== 'on-unlocked') return;
+  clearTimeout(translateSelectionDebounceTimer);
+
+  if (!hasActiveBox1TextSelection()) {
+    if (lastTranslatedContext && lastTranslatedContext.scope === 'selection') {
+      hideDictionaryPopover();
+    }
+    return;
+  }
+
+  translateSelectionDebounceTimer = setTimeout(() => {
+    if (translateHoverMode !== 'on-unlocked' || !hasActiveBox1TextSelection()) return;
+    const selSpan = extractSelectionSpanForTranslation();
+    if (!selSpan) return;
+    const pop = document.getElementById('jotoba-dict-popover');
+    const isSameVisible = pop && !pop.classList.contains('hidden') && activeTranslatedSpanKey === selSpan.key;
+    if (!isSameVisible) {
+      triggerHoverTranslationPopover(selSpan);
+    }
+  }, 180);
 }
 
 async function triggerTokenDictionaryLookup(tokenEl) {
@@ -1874,13 +2351,19 @@ function initDictionaryAndCrossBoxHighlight() {
 
   ensureDictInspectBar();
   ensureDictionaryPopoverElement();
+  setTranslateMode('off', false);
   setInspectMode(dictInspectMode, false);
   applyAppLanguageUI();
 
   const syncEvents = ['select', 'keyup', 'mouseup', 'touchend'];
   syncEvents.forEach((evt) => {
     textOutputBox.addEventListener(evt, () => {
-      requestAnimationFrame(syncBox1SelectionToBox2);
+      requestAnimationFrame(() => {
+        syncBox1SelectionToBox2();
+        if (translateHoverMode === 'on-unlocked') {
+          scheduleSelectionTranslation();
+        }
+      });
     });
   });
 
@@ -1901,65 +2384,145 @@ function initDictionaryAndCrossBoxHighlight() {
   document.addEventListener('selectionchange', () => {
     if (document.activeElement === textOutputBox) {
       syncBox1SelectionToBox2();
+      if (translateHoverMode === 'on-unlocked') {
+        scheduleSelectionTranslation();
+      }
     }
   });
 
   if (box1Wrapper) {
     box1Wrapper.addEventListener('mousemove', (e) => {
-      if (!isInspectModeActive) return;
-      if (e.buttons !== 0 || hasActiveBox1TextSelection()) return;
+      if (e.buttons !== 0) return;
 
-      const hitToken = findBox1TokenAtPoint(e.clientX, e.clientY);
-      if (hitToken) {
-        const hitIdx = Number(hitToken.getAttribute('data-seg-idx'));
-        if (hitIdx !== activeHoveredSegIdx) {
-          triggerTokenDictionaryLookup(hitToken);
-        } else {
-          clearTimeout(dictHoverHideTimer);
+      // Dictionary Mode Hover
+      if (isInspectModeActive) {
+        if (hasActiveBox1TextSelection()) return;
+
+        const hitToken = findBox1TokenAtPoint(e.clientX, e.clientY);
+        if (hitToken) {
+          const hitIdx = Number(hitToken.getAttribute('data-seg-idx'));
+          if (hitIdx !== activeHoveredSegIdx) {
+            triggerTokenDictionaryLookup(hitToken);
+          } else {
+            clearTimeout(dictHoverHideTimer);
+          }
+        } else if (activeHoveredSegIdx !== null) {
+          scheduleHideDictionaryPopover(180);
         }
-      } else if (activeHoveredSegIdx !== null) {
-        scheduleHideDictionaryPopover(180);
+        return;
+      }
+
+      // Translation Mode Hover (Scope B in unlocked: respect active selection; Scope A in locked)
+      if (isTranslateModeActive) {
+        if (translateHoverMode === 'on-unlocked' && hasActiveBox1TextSelection()) return;
+
+        const hitToken = findBox1TokenAtPoint(e.clientX, e.clientY);
+        if (hitToken) {
+          const sentSpan = extractSentenceSpanForToken(hitToken);
+          if (!sentSpan) return;
+
+          if (activeTranslatedSpanKey === sentSpan.key) {
+            clearTimeout(dictHoverHideTimer);
+            return;
+          }
+
+          clearTimeout(dictHoverHideTimer);
+          clearTimeout(translateHoverDebounceTimer);
+          translateHoverDebounceTimer = setTimeout(() => {
+            if (!isTranslateModeActive) return;
+            if (translateHoverMode === 'on-unlocked' && hasActiveBox1TextSelection()) return;
+            triggerHoverTranslationPopover(sentSpan);
+          }, 220);
+        } else if (activeTranslatedSpanKey !== null) {
+          clearTimeout(translateHoverDebounceTimer);
+          scheduleHideDictionaryPopover(180);
+        }
       }
     });
 
     box1Wrapper.addEventListener('mouseleave', () => {
+      clearTimeout(translateHoverDebounceTimer);
       if (isInspectModeActive && activeHoveredSegIdx !== null) {
+        scheduleHideDictionaryPopover(180);
+      } else if (isTranslateModeActive && activeTranslatedSpanKey !== null) {
+        if (translateHoverMode === 'on-unlocked' && hasActiveBox1TextSelection()) return;
         scheduleHideDictionaryPopover(180);
       }
     });
 
     box1Wrapper.addEventListener('click', (e) => {
-      if (!isInspectModeActive) return;
+      // Dictionary Mode Click / Tap
+      if (isInspectModeActive) {
+        if (dictInspectMode === 'on-locked') {
+          const hitToken = e.target.closest('.box1-token') || findBox1TokenAtPoint(e.clientX, e.clientY);
+          if (hitToken) {
+            e.preventDefault();
+            e.stopPropagation();
+            triggerTokenDictionaryLookup(hitToken);
+          }
+          return;
+        }
 
-      if (dictInspectMode === 'on-locked') {
-        const hitToken = e.target.closest('.box1-token') || findBox1TokenAtPoint(e.clientX, e.clientY);
+        // ON + Unlocked: let Box 1 focus/open keyboard naturally while showing the popover for the tapped word
+        if (hasActiveBox1TextSelection()) {
+          hideDictionaryPopover();
+          return;
+        }
+
+        const hitToken = findBox1TokenAtPoint(e.clientX, e.clientY);
         if (hitToken) {
-          e.preventDefault();
-          e.stopPropagation();
-          triggerTokenDictionaryLookup(hitToken);
-        }
-        return;
-      }
-
-      // ON + Unlocked: let Box 1 focus/open keyboard naturally while showing the popover for the tapped word
-      if (hasActiveBox1TextSelection()) {
-        hideDictionaryPopover();
-        return;
-      }
-
-      const hitToken = findBox1TokenAtPoint(e.clientX, e.clientY);
-      if (hitToken) {
-        const hitIdx = Number(hitToken.getAttribute('data-seg-idx'));
-        const pop = document.getElementById('jotoba-dict-popover');
-        const isSameVisible = pop && !pop.classList.contains('hidden') && hitIdx === activeHoveredSegIdx;
-        if (isSameVisible) {
-          clearTimeout(dictHoverHideTimer);
-          positionDictionaryPopover(hitToken.getBoundingClientRect());
+          const hitIdx = Number(hitToken.getAttribute('data-seg-idx'));
+          const pop = document.getElementById('jotoba-dict-popover');
+          const isSameVisible = pop && !pop.classList.contains('hidden') && hitIdx === activeHoveredSegIdx;
+          if (isSameVisible) {
+            clearTimeout(dictHoverHideTimer);
+            positionDictionaryPopover(hitToken.getBoundingClientRect());
+          } else {
+            triggerTokenDictionaryLookup(hitToken);
+          }
         } else {
-          triggerTokenDictionaryLookup(hitToken);
+          hideDictionaryPopover();
         }
-      } else {
-        hideDictionaryPopover();
+        return;
+      }
+
+      // Translation Mode Click / Tap
+      if (isTranslateModeActive) {
+        if (translateHoverMode === 'on-locked') {
+          const hitToken = e.target.closest('.box1-token') || findBox1TokenAtPoint(e.clientX, e.clientY);
+          if (hitToken) {
+            e.preventDefault();
+            e.stopPropagation();
+            clearTimeout(translateHoverDebounceTimer);
+            const sentSpan = extractSentenceSpanForToken(hitToken);
+            if (sentSpan) triggerHoverTranslationPopover(sentSpan);
+          }
+          return;
+        }
+
+        // ON + Unlocked (Scope Option B): Selection first, sentence fallback on tap
+        if (hasActiveBox1TextSelection()) {
+          scheduleSelectionTranslation();
+          return;
+        }
+
+        const hitToken = findBox1TokenAtPoint(e.clientX, e.clientY);
+        if (hitToken) {
+          clearTimeout(translateHoverDebounceTimer);
+          const sentSpan = extractSentenceSpanForToken(hitToken);
+          if (sentSpan) {
+            const pop = document.getElementById('jotoba-dict-popover');
+            const isSameVisible = pop && !pop.classList.contains('hidden') && activeTranslatedSpanKey === sentSpan.key;
+            if (isSameVisible) {
+              clearTimeout(dictHoverHideTimer);
+              positionDictionaryPopover(hitToken.getBoundingClientRect());
+            } else {
+              triggerHoverTranslationPopover(sentSpan);
+            }
+          }
+        } else {
+          hideDictionaryPopover();
+        }
       }
     });
   }
@@ -1967,12 +2530,14 @@ function initDictionaryAndCrossBoxHighlight() {
   document.addEventListener('mousedown', (e) => {
     const pop = document.getElementById('jotoba-dict-popover');
     const dictBtn = document.getElementById('btn-inspect-dict');
+    const transBtn = document.getElementById('btn-translate-hover');
     const menuWrapper = document.getElementById('app-lang-menu-wrapper');
     if (pop && !pop.classList.contains('hidden')) {
       if (
         !pop.contains(e.target) &&
         (!box1Wrapper || !box1Wrapper.contains(e.target)) &&
         (!dictBtn || !dictBtn.contains(e.target)) &&
+        (!transBtn || !transBtn.contains(e.target)) &&
         (!menuWrapper || !menuWrapper.contains(e.target))
       ) {
         hideDictionaryPopover();
@@ -1983,12 +2548,14 @@ function initDictionaryAndCrossBoxHighlight() {
   document.addEventListener('touchstart', (e) => {
     const pop = document.getElementById('jotoba-dict-popover');
     const dictBtn = document.getElementById('btn-inspect-dict');
+    const transBtn = document.getElementById('btn-translate-hover');
     const menuWrapper = document.getElementById('app-lang-menu-wrapper');
     if (pop && !pop.classList.contains('hidden')) {
       if (
         !pop.contains(e.target) &&
         (!box1Wrapper || !box1Wrapper.contains(e.target)) &&
         (!dictBtn || !dictBtn.contains(e.target)) &&
+        (!transBtn || !transBtn.contains(e.target)) &&
         (!menuWrapper || !menuWrapper.contains(e.target))
       ) {
         hideDictionaryPopover();
