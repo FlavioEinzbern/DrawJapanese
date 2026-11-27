@@ -13,77 +13,14 @@ let isKuromojiIndexBuilt = false;
 const JOTOBA_WORD_CACHE = new Map();
 const JOTOBA_KANJI_CACHE = new Map();
 
-const KANJI_API_CACHE = {};
-const KANJI_REGEX = /[\u4E00-\u9FAF\u3400-\u4DBF]/;
 const PURE_JA_NUMBER_SURFACE_REGEX = /^[0-9０-９零〇一二两三四五六七八九十百千万億亿]+$/;
 const PRECEDING_NUM_SURFACE_REGEX = /[0-9０-９零〇一二两三四五六七八九十百千万億亿]$/;
 const PRECEDING_NUMBER_REGEX = /[0-9０-９零〇一二两三四五六七八九十百千万億亿]/;
 const CLAUSE_BREAK_END_REGEX = /[\s\u3000、。，．・：；！？「『（［｛〈《【〔…‥〜～.,!?;:'"(\[{/\\]$/;
 
 /* ==========================================================================
-   Shared String & CJK Number Helpers (Used Across Language Modules)
+   Japanese Kana -> Hepburn Romaji Helpers
    ========================================================================== */
-function escapeHtml(str) {
-  return String(str || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function normalizeAsciiDigits(str) {
-  return String(str || '').replace(/[０-９]/g, ch =>
-    String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)
-  );
-}
-
-function parseCjkNumberString(str) {
-  if (!/^[零〇一二两三四五六七八九十百千万億亿]+$/.test(str)) return null;
-
-  if (!/[十百千万億亿]/.test(str)) {
-    let digits = '';
-    for (const ch of str) {
-      if (CJK_DIGIT_VALUE[ch] === undefined) return null;
-      digits += String(CJK_DIGIT_VALUE[ch]);
-    }
-    return digits;
-  }
-
-  let total = 0;
-  let section = 0;
-  let currentDigit = 0;
-
-  for (const ch of str) {
-    if (CJK_DIGIT_VALUE[ch] !== undefined) {
-      currentDigit = CJK_DIGIT_VALUE[ch];
-    } else if (CJK_SMALL_UNIT[ch]) {
-      const unit = CJK_SMALL_UNIT[ch];
-      section += (currentDigit || 1) * unit;
-      currentDigit = 0;
-    } else if (CJK_LARGE_UNIT[ch]) {
-      const largeUnit = CJK_LARGE_UNIT[ch];
-      section += currentDigit;
-      total += (section || 1) * largeUnit;
-      section = 0;
-      currentDigit = 0;
-    }
-  }
-  return String(total + section + currentDigit);
-}
-
-function katakanaToHiragana(str) {
-  return String(str || '').replace(/[\u30A1-\u30F6]/g, (ch) =>
-    String.fromCharCode(ch.charCodeAt(0) - 0x60)
-  );
-}
-
-function hiraganaToKatakana(str) {
-  return String(str || '').replace(/[\u3041-\u3096]/g, (ch) =>
-    String.fromCharCode(ch.charCodeAt(0) + 0x60)
-  );
-}
-
 function getSokuonHepburnConsonant(nextRomaji) {
   if (!nextRomaji) return "'";
   const lower = nextRomaji.toLowerCase();
@@ -212,74 +149,11 @@ function numberToJapaneseRomaji(rawStr) {
 }
 
 /* ==========================================================================
-   kanjiapi.dev Fallback & Kuromoji Loader / Analyzer Patching
+   Kuromoji Loader & Analyzer Patching (Auto-Restores XHR After Init)
    ========================================================================== */
-async function fetchKanjiApiData(char) {
-  if (KANJI_API_CACHE[char]) return KANJI_API_CACHE[char];
-  try {
-    const res = await fetch(`https://kanjiapi.dev/v1/kanji/${encodeURIComponent(char)}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-
-    const kunList = (data.kun_readings || []).map(r => r.replace(/^-|-$/g, ''));
-    const onList = (data.on_readings || []).map(r => katakanaToHiragana(r.replace(/^-|-$/g, '')));
-
-    const okuriRules = [];
-    let standaloneKun = null;
-
-    for (const kun of kunList) {
-      if (kun.includes('.')) {
-        const [stem, okuri] = kun.split('.');
-        if (stem && okuri) okuriRules.push({ stem, okuri });
-      } else if (!standaloneKun && kun) {
-        standaloneKun = kun;
-      }
-    }
-
-    const primaryKana = standaloneKun
-      || onList[0]
-      || (okuriRules[0] ? okuriRules[0].stem : '')
-      || (data.name_readings && data.name_readings[0])
-      || '';
-
-    const entry = {
-      kana: primaryKana,
-      romaji: kanaToRomajiString(primaryKana),
-      onKana: onList[0] || primaryKana,
-      onRomaji: kanaToRomajiString(onList[0] || primaryKana),
-      okuriRules,
-      meanings: data.meanings || [],
-      jlpt: data.jlpt || null,
-      grade: data.grade || null,
-      onReadingsRaw: data.on_readings || [],
-      kunReadingsRaw: data.kun_readings || []
-    };
-
-    KANJI_API_CACHE[char] = entry;
-    return entry;
-  } catch (e) {
-    console.warn(`kanjiapi.dev lookup failed for ${char}:`, e.message);
-    return null;
-  }
-}
-
-async function ensureKanjiReadingsLoaded(str) {
-  const missing = [];
-  for (const ch of str) {
-    if (KANJI_REGEX.test(ch) && !KANJI_API_CACHE[ch]) {
-      missing.push(ch);
-    }
-  }
-  if (missing.length > 0) {
-    const unique = [...new Set(missing)];
-    await Promise.all(unique.map(ch => fetchKanjiApiData(ch)));
-  }
-}
-
-let isDictLoaderPatched = false;
+let activeXhrPatchRestore = null;
 function ensureGzippedDictLoader() {
-  if (isDictLoaderPatched) return;
-  isDictLoaderPatched = true;
+  if (activeXhrPatchRestore) return activeXhrPatchRestore;
 
   const origOpen = XMLHttpRequest.prototype.open;
   const origSend = XMLHttpRequest.prototype.send;
@@ -321,6 +195,13 @@ function ensureGzippedDictLoader() {
         if (typeof xhr.onerror === 'function') xhr.onerror(err);
       });
   };
+
+  activeXhrPatchRestore = () => {
+    XMLHttpRequest.prototype.open = origOpen;
+    XMLHttpRequest.prototype.send = origSend;
+    activeXhrPatchRestore = null;
+  };
+  return activeXhrPatchRestore;
 }
 
 function buildKuromojiReadingIndex(analyzer) {
@@ -674,30 +555,65 @@ function patchKuromojiAnalyzer(analyzer) {
   analyzer._customRulesPatched = true;
 }
 
-/* Race-free per-call Kuroshiro formatter using an isolated inline analyzer */
-async function convertTokensWithKuroshiro(tokens, options) {
-  if (!tokens || tokens.length === 0) return '';
-  const segmentStr = tokens.map(t => t.surface_form || '').join('');
-  if (!segmentStr) return '';
-
-  const KuroshiroClass = typeof Kuroshiro !== 'undefined' ? (Kuroshiro.default || Kuroshiro) : null;
-  if (typeof KuroshiroClass === 'function') {
-    const tokenClones = tokens.map(t => ({ ...t }));
-    const isolatedKs = new KuroshiroClass();
-    await isolatedKs.init({
-      init: () => Promise.resolve(),
-      parse: async () => tokenClones
-    });
-    return await isolatedKs.convert(segmentStr, options);
+/* Zero-allocation synchronous Furigana & Hepburn Romaji formatters for Kuromoji tokens */
+function buildTokenFuriganaHtml(surf, readingKata) {
+  if (!surf) return '';
+  if (!readingKata || readingKata === '*' || !KANJI_REGEX.test(surf)) {
+    return escapeHtml(surf);
+  }
+  const readingHira = katakanaToHiragana(readingKata);
+  if (!readingHira || katakanaToHiragana(surf) === readingHira) {
+    return escapeHtml(surf);
   }
 
-  return await kuroshiroInstance.convert(segmentStr, options);
+  const parts = [];
+  let i = 0;
+  while (i < surf.length) {
+    const isKanjiRun = KANJI_REGEX.test(surf[i]) || surf[i] === '々';
+    let j = i + 1;
+    while (j < surf.length && (KANJI_REGEX.test(surf[j]) || surf[j] === '々') === isKanjiRun) {
+      j++;
+    }
+    parts.push({ text: surf.slice(i, j), isKanji: isKanjiRun });
+    i = j;
+  }
+
+  if (parts.length === 1 && parts[0].isKanji) {
+    return `<ruby>${escapeHtml(surf)}<rt>${escapeHtml(readingHira)}</rt></ruby>`;
+  }
+
+  let pattern = '^';
+  for (const part of parts) {
+    if (part.isKanji) {
+      pattern += '(.+?)';
+    } else {
+      pattern += katakanaToHiragana(part.text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+  }
+  pattern += '$';
+
+  const match = new RegExp(pattern).exec(readingHira);
+  if (!match) {
+    return `<ruby>${escapeHtml(surf)}<rt>${escapeHtml(readingHira)}</rt></ruby>`;
+  }
+
+  let html = '';
+  let groupIdx = 1;
+  for (const part of parts) {
+    if (part.isKanji) {
+      const rt = match[groupIdx++] || '';
+      html += `<ruby>${escapeHtml(part.text)}<rt>${escapeHtml(rt)}</rt></ruby>`;
+    } else {
+      html += escapeHtml(part.text);
+    }
+  }
+  return html;
 }
 
 /* ==========================================================================
    Furigana HTML & Japanese Aligned Segments Builder
    ========================================================================== */
-async function buildFuriganaHtmlFromTokens(tokens) {
+function buildFuriganaHtmlFromTokens(tokens) {
   let html = '';
 
   for (let idx = 0; idx < tokens.length; idx++) {
@@ -713,29 +629,12 @@ async function buildFuriganaHtmlFromTokens(tokens) {
     } else if (tok._hasTrailingWa) {
       const prefixSurf = surf.slice(0, -1);
       const prefixRead = (tok.reading || '').slice(0, -1);
-      const prefixPron = (tok.pronunciation || '').slice(0, -1);
-      if (KANJI_REGEX.test(prefixSurf)) {
-        innerHtml = await convertTokensWithKuroshiro([{
-          ...tok,
-          surface_form: escapeHtml(prefixSurf),
-          reading: prefixRead,
-          pronunciation: prefixPron
-        }], {
-          to: 'hiragana',
-          mode: 'furigana'
-        });
-      } else {
-        innerHtml = escapeHtml(prefixSurf);
-      }
+      innerHtml = KANJI_REGEX.test(prefixSurf)
+        ? buildTokenFuriganaHtml(prefixSurf, prefixRead)
+        : escapeHtml(prefixSurf);
       innerHtml += '<ruby>は<rt>わ</rt></ruby>';
     } else if (KANJI_REGEX.test(surf)) {
-      innerHtml = await convertTokensWithKuroshiro([{
-        ...tok,
-        surface_form: escapeHtml(surf)
-      }], {
-        to: 'hiragana',
-        mode: 'furigana'
-      });
+      innerHtml = buildTokenFuriganaHtml(surf, tok.reading);
     } else {
       innerHtml = escapeHtml(surf);
     }
@@ -772,7 +671,7 @@ async function renderBox1FuriganaOnly(text, shouldApply = null) {
   if (isKuroshiroReady && kuroshiroInstance && kuroshiroAnalyzer) {
     try {
       const tokens = await kuroshiroAnalyzer.parse(text);
-      const furiganaHtml = await buildFuriganaHtmlFromTokens(tokens);
+      const furiganaHtml = buildFuriganaHtmlFromTokens(tokens);
       if (typeof shouldApply === 'function' && !shouldApply()) return;
       furiganaBackdrop.innerHTML = furiganaHtml.endsWith('\n')
         ? furiganaHtml + '\u200b'
@@ -786,42 +685,40 @@ async function renderBox1FuriganaOnly(text, shouldApply = null) {
   furiganaBackdrop.innerHTML = fallbackJapaneseFuriganaHtml(text);
 }
 
-async function convertJapaneseTokenToRomaji(tok) {
+function convertJapaneseTokenToRomaji(tok) {
   const src = tok.surface_form || '';
-  const readingKata = (tok.reading && tok.reading !== '*') ? tok.reading : '';
+  if (!src) return '';
 
-  // Handle true trailing sokuon (e.g., あっ！ -> a'!) instead of Kuroshiro's "tsu" fallback
+  if (tok._isParticleWa) return 'wa';
+  if (tok._isParticleE) return 'e';
+
+  if (!/[\u3041-\u3096\u30A1-\u30FA\u4E00-\u9FAF\u3400-\u4DBFー々]/.test(src)) {
+    return src;
+  }
+
+  let readingKata = (tok.reading && tok.reading !== '*') ? tok.reading : '';
+  if (tok._hasTrailingWa) {
+    if (readingKata.endsWith('ハ')) {
+      readingKata = readingKata.slice(0, -1) + 'ワ';
+    } else if (!readingKata && src.endsWith('は')) {
+      readingKata = hiraganaToKatakana(src.slice(0, -1)) + 'ワ';
+    }
+  }
+
+  // Handle true trailing sokuon (e.g., あっ！ -> a'!)
   if (/[っッ]$/.test(src)) {
     const trimmedSrc = src.slice(0, -1);
     const trimmedRead = readingKata.endsWith('ッ') ? readingKata.slice(0, -1) : readingKata;
-    const trimmedPron = (tok.pronunciation && tok.pronunciation.endsWith('ッ'))
-      ? tok.pronunciation.slice(0, -1)
-      : (tok.pronunciation || trimmedRead);
-
     if (!trimmedSrc) return "'";
-
-    const baseRom = await convertTokensWithKuroshiro([{
-      ...tok,
-      surface_form: trimmedSrc,
-      reading: trimmedRead || undefined,
-      pronunciation: trimmedPron || undefined
-    }], {
-      to: 'romaji',
-      mode: 'spaced',
-      romajiSystem: 'hepburn'
-    });
-    return expandLeftoverChouonpu(baseRom.trim()) + "'";
+    const baseSource = trimmedRead || trimmedSrc;
+    return expandLeftoverChouonpu(kanaToRomajiString(baseSource)).trim() + "'";
   }
 
-  const rawRom = await convertTokensWithKuroshiro([tok], {
-    to: 'romaji',
-    mode: 'spaced',
-    romajiSystem: 'hepburn'
-  });
-  return expandLeftoverChouonpu(rawRom);
+  const kanaSource = readingKata || src;
+  return expandLeftoverChouonpu(kanaToRomajiString(kanaSource));
 }
 
-async function buildJapaneseAlignedSegments(tokens) {
+function buildJapaneseAlignedSegments(tokens) {
   const segs = [];
   let charCursor = 0;
 
@@ -849,7 +746,7 @@ async function buildJapaneseAlignedSegments(tokens) {
       continue;
     }
 
-    const rawRom = await convertJapaneseTokenToRomaji(tok);
+    const rawRom = convertJapaneseTokenToRomaji(tok);
     const isKanjiOrDigitNumber = PURE_JA_NUMBER_SURFACE_REGEX.test(src);
     const processed = postProcessJapaneseRomajiNumbers(rawRom, isKanjiOrDigitNumber);
     segs.push({
@@ -921,7 +818,7 @@ function resolveFallbackKanjiAt(str, i) {
   const rest = str.slice(i + 1);
   const prevChar = i > 0 ? str[i - 1] : '';
   const precededByNumber = prevChar && PRECEDING_NUMBER_REGEX.test(prevChar);
-  const apiEntry = KANJI_API_CACHE[ch];
+  const apiEntry = KANJI_API_CACHE.get(ch);
 
   if (precededByNumber && COUNTER_AFTER_NUMBER_MAP[ch]) {
     return {
@@ -3433,7 +3330,7 @@ async function fetchJotobaDictionaryData(surface, basicForm, readingHira, pos, p
       selectedWord: null,
       kanjiDetails: []
     };
-    JOTOBA_WORD_CACHE.set(cacheKey, grammarResult);
+    setBoundedCache(JOTOBA_WORD_CACHE, cacheKey, grammarResult, 300);
     return grammarResult;
   }
 
@@ -3477,7 +3374,7 @@ async function fetchJotobaDictionaryData(surface, basicForm, readingHira, pos, p
           jlpt: foundK.jlpt || null,
           grade: foundK.grade || null
         };
-        JOTOBA_KANJI_CACHE.set(kChar, kEntry);
+        setBoundedCache(JOTOBA_KANJI_CACHE, kChar, kEntry, 500);
         kanjiDetails.push(kEntry);
       } else {
         const apiK = await fetchKanjiApiData(kChar);
@@ -3490,7 +3387,7 @@ async function fetchJotobaDictionaryData(surface, basicForm, readingHira, pos, p
             jlpt: apiK.jlpt,
             grade: apiK.grade
           };
-          JOTOBA_KANJI_CACHE.set(kChar, kEntry);
+          setBoundedCache(JOTOBA_KANJI_CACHE, kChar, kEntry, 500);
           kanjiDetails.push(kEntry);
         }
       }
@@ -3507,7 +3404,7 @@ async function fetchJotobaDictionaryData(surface, basicForm, readingHira, pos, p
     kanjiDetails
   };
 
-  JOTOBA_WORD_CACHE.set(cacheKey, result);
+  setBoundedCache(JOTOBA_WORD_CACHE, cacheKey, result, 300);
   return result;
 }
 
@@ -3618,7 +3515,7 @@ async function lookupJapaneseTokenDict(tokenMeta) {
    Kuroshiro + Kuromoji Startup Initialization
    ========================================================================== */
 async function initKuroshiro() {
-  ensureGzippedDictLoader();
+  const restoreXhr = ensureGzippedDictLoader();
   if (typeof getBox2Backdrop === 'function') getBox2Backdrop();
   if (typeof initDictionaryAndCrossBoxHighlight === 'function') initDictionaryAndCrossBoxHighlight();
   if (typeof buildChinesePinyinIndex === 'function') buildChinesePinyinIndex();
@@ -3626,44 +3523,50 @@ async function initKuroshiro() {
   const KuroshiroClass = typeof Kuroshiro !== 'undefined' ? (Kuroshiro.default || Kuroshiro) : null;
   const KuromojiAnalyzerClass = typeof KuromojiAnalyzer !== 'undefined' ? (KuromojiAnalyzer.default || KuromojiAnalyzer) : null;
 
-  if (typeof KuroshiroClass !== 'function' || typeof KuromojiAnalyzerClass !== 'function') {
-    setEngineStatus('ready-fallback', 'Ready (kanjiapi.dev Mode)');
-    return;
-  }
-
-  const cdnDictPaths = [
-    'https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/',
-    'https://unpkg.com/kuromoji@0.1.2/dict/',
-    'https://cdn.jsdelivr.net/npm/kuromoji-fix-dict@0.1.2/dict/'
-  ];
-
-  for (const dictPath of cdnDictPaths) {
-    try {
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Dictionary load timeout')), 15000)
-      );
-
-      const loadPromise = (async () => {
-        const ks = new KuroshiroClass();
-        const analyzer = new KuromojiAnalyzerClass({ dictPath });
-        await ks.init(analyzer);
-        patchKuromojiAnalyzer(analyzer);
-        return { ks, analyzer };
-      })();
-
-      const loaded = await Promise.race([loadPromise, timeoutPromise]);
-      kuroshiroInstance = loaded.ks;
-      kuroshiroAnalyzer = loaded.analyzer;
-      isKuroshiroReady = true;
-      buildKuromojiReadingIndex(loaded.analyzer);
-      setEngineStatus('ready', 'Kuroshiro + Kuromoji Ready');
-      if (typeof updateRomanization === 'function') updateRomanization(false, true);
+  try {
+    if (typeof KuroshiroClass !== 'function' || typeof KuromojiAnalyzerClass !== 'function') {
+      setEngineStatus('ready-fallback', 'Ready (kanjiapi.dev Mode)');
       return;
-    } catch (e) {
-      console.warn(`Kuromoji failed at ${dictPath}:`, e.message);
+    }
+
+    const cdnDictPaths = [
+      'https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/',
+      'https://unpkg.com/kuromoji@0.1.2/dict/',
+      'https://cdn.jsdelivr.net/npm/kuromoji-fix-dict@0.1.2/dict/'
+    ];
+
+    for (const dictPath of cdnDictPaths) {
+      try {
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Dictionary load timeout')), 15000)
+        );
+
+        const loadPromise = (async () => {
+          const ks = new KuroshiroClass();
+          const analyzer = new KuromojiAnalyzerClass({ dictPath });
+          await ks.init(analyzer);
+          patchKuromojiAnalyzer(analyzer);
+          return { ks, analyzer };
+        })();
+
+        const loaded = await Promise.race([loadPromise, timeoutPromise]);
+        kuroshiroInstance = loaded.ks;
+        kuroshiroAnalyzer = loaded.analyzer;
+        isKuroshiroReady = true;
+        buildKuromojiReadingIndex(loaded.analyzer);
+        setEngineStatus('ready', 'Kuroshiro + Kuromoji Ready');
+        if (typeof updateRomanization === 'function') updateRomanization(false, true);
+        return;
+      } catch (e) {
+        console.warn(`Kuromoji failed at ${dictPath}:`, e.message);
+      }
+    }
+
+    setEngineStatus('ready-fallback', 'Ready (kanjiapi.dev Mode)');
+    if (typeof updateRomanization === 'function') updateRomanization(false, true);
+  } finally {
+    if (typeof restoreXhr === 'function') {
+      restoreXhr();
     }
   }
-
-  setEngineStatus('ready-fallback', 'Ready (kanjiapi.dev Mode)');
-  if (typeof updateRomanization === 'function') updateRomanization(false, true);
 }
