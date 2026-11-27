@@ -25,10 +25,11 @@ const CLAUSE_BREAK_END_REGEX = /[\s\u3000、。，．・：；！？「『（［
    ========================================================================== */
 function escapeHtml(str) {
   return String(str || '')
-    .replace(/&/g, '&')
-    .replace(/</g, '<')
-    .replace(/>/g, '>')
-    .replace(/"/g, '"');
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function normalizeAsciiDigits(str) {
@@ -761,15 +762,18 @@ async function buildFuriganaHtmlFromTokens(tokens) {
   return html;
 }
 
-async function renderBox1FuriganaOnly(text) {
+async function renderBox1FuriganaOnly(text, shouldApply = null) {
   if (!text) {
-    furiganaBackdrop.innerHTML = '';
+    if (typeof shouldApply !== 'function' || shouldApply()) {
+      furiganaBackdrop.innerHTML = '';
+    }
     return;
   }
   if (isKuroshiroReady && kuroshiroInstance && kuroshiroAnalyzer) {
     try {
       const tokens = await kuroshiroAnalyzer.parse(text);
       const furiganaHtml = await buildFuriganaHtmlFromTokens(tokens);
+      if (typeof shouldApply === 'function' && !shouldApply()) return;
       furiganaBackdrop.innerHTML = furiganaHtml.endsWith('\n')
         ? furiganaHtml + '\u200b'
         : furiganaHtml;
@@ -778,6 +782,7 @@ async function renderBox1FuriganaOnly(text) {
       console.warn('Furigana render fallback:', e);
     }
   }
+  if (typeof shouldApply === 'function' && !shouldApply()) return;
   furiganaBackdrop.innerHTML = fallbackJapaneseFuriganaHtml(text);
 }
 
@@ -984,7 +989,7 @@ function fallbackJapaneseFuriganaHtml(str) {
 
     const kanjiMatch = resolveFallbackKanjiAt(str, i);
     const inner = (kanjiMatch && kanjiMatch.kana)
-      ? `<ruby>${escapeHtml(ch)}<rt>${kanjiMatch.kana}</rt></ruby>`
+      ? `<ruby>${escapeHtml(ch)}<rt>${escapeHtml(kanjiMatch.kana)}</rt></ruby>`
       : escapeHtml(ch);
 
     html += `<span class="box1-token" data-seg-idx="${segIdx}" data-surface="${escapeHtml(ch)}" data-basic="${escapeHtml(ch)}" data-reading="${escapeHtml(kanjiMatch ? kanjiMatch.kana : ch)}" data-pos="" data-pos-detail="">${inner}</span>`;
@@ -2121,50 +2126,6 @@ function inferSuffixesFromSurface(surface, basic, pos) {
   const isDifferentFromBasic = Boolean(basic && basic !== '*' && surface !== basic);
 
   // High-confidence multi-character endings (safe even if Kuromoji failed to lemmatize basic_form)
-  const unambiguousEndings = [
-    {
-      end: 'たくなかった',
-      badge: 'Past Negative Desiderative',
-      isNegative: true,
-      sub: 'Past Negative Desiderative (過去否定・希望)',
-      title: 'did not want to do...',
-      shortGloss: 'did not want to'
-    },
-    {
-      end: 'ませんでした',
-      badge: 'Polite Past Negative',
-      isNegative: true,
-      sub: 'Polite Past Negative (丁寧・過去否定)',
-      title: 'polite past negative ending (did not)',
-      shortGloss: 'did not'
-    },
-    {
-      end: 'ませんでした',
-      badge: 'Polite Past Negative',
-      isNegative: true,
-      sub: 'Polite Past Negative (丁寧・過去否定)',
-      title: 'polite past negative ending (did not)',
-      shortGloss: 'did not'
-    },
-    {
-      end: 'ませんでした',
-      badge: 'Polite Past Negative',
-      isNegative: true,
-      sub: 'Polite Past Negative (丁寧・過去否定)',
-      title: 'polite past negative ending (did not)',
-      shortGloss: 'did not'
-    },
-    {
-      end: 'ませんでした',
-      badge: 'Polite Past Negative',
-      isNegative: true,
-      sub: 'Polite Past Negative (丁寧・過去否定)',
-      title: 'polite past negative ending (did not)',
-      shortGloss: 'did not'
-    }
-  ];
-  void unambiguousEndings;
-
   const strongEndings = [
     {
       end: 'たくなかった',
@@ -2173,6 +2134,14 @@ function inferSuffixesFromSurface(surface, basic, pos) {
       sub: 'Past Negative Desiderative (過去否定・希望)',
       title: 'did not want to do...',
       shortGloss: 'did not want to'
+    },
+    {
+      end: 'ませんでした',
+      badge: 'Polite Past Negative',
+      isNegative: true,
+      sub: 'Polite Past Negative (丁寧・過去否定)',
+      title: 'polite past negative ending (did not)',
+      shortGloss: 'did not'
     },
     {
       end: 'なかったら',
@@ -3648,23 +3617,6 @@ async function lookupJapaneseTokenDict(tokenMeta) {
 /* ==========================================================================
    Kuroshiro + Kuromoji Startup Initialization
    ========================================================================== */
-function setEngineStatus(type, msg) {
-  statusText.textContent = msg;
-  statusBadge.title = msg;
-  statusBadge.className = 'group flex items-center text-xs font-medium p-1.5 hover:px-2.5 hover:py-1 rounded-full border transition-all cursor-default ';
-
-  if (type === 'ready') {
-    statusBadge.className += 'bg-emerald-50 text-emerald-700 border-emerald-200';
-    statusBadge.querySelector('span').className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0';
-  } else if (type === 'ready-fallback') {
-    statusBadge.className += 'bg-blue-50 text-blue-700 border-blue-200';
-    statusBadge.querySelector('span').className = 'w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0';
-  } else {
-    statusBadge.className += 'bg-amber-50 text-amber-700 border-amber-200';
-    statusBadge.querySelector('span').className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0';
-  }
-}
-
 async function initKuroshiro() {
   ensureGzippedDictLoader();
   if (typeof getBox2Backdrop === 'function') getBox2Backdrop();
