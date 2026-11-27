@@ -4,6 +4,7 @@
    ========================================================================== */
 let alignedSegments = [];
 let imeSuggestRequestId = 0;
+let remoteImeDebounceTimer = null;
 
 /* 3-Way Dictionary Inspect Mode: 'on-unlocked' | 'on-locked' | 'off' */
 const DICT_INSPECT_MODES = ['on-unlocked', 'on-locked', 'off'];
@@ -699,6 +700,9 @@ function showTypingSuggestions(suggestions, replaceRange) {
 }
 
 function clearAlignedSegmentsAndSuggestions() {
+  clearTimeout(remoteImeDebounceTimer);
+  remoteImeDebounceTimer = null;
+  imeSuggestRequestId++;
   alignedSegments = [];
   showTypingSuggestions([], null);
   hideDictionaryPopover();
@@ -789,6 +793,8 @@ async function updateChineseTypingSuggestions(rawPinyin, replaceSpec) {
     return;
   }
 
+  clearTimeout(remoteImeDebounceTimer);
+  remoteImeDebounceTimer = null;
   const reqId = ++imeSuggestRequestId;
   const hasExplicitTone = syllables.length === 1 && Boolean(syllables[0].tone);
   const localList = buildLocalChineseSuggestions(rawPinyin);
@@ -797,29 +803,32 @@ async function updateChineseTypingSuggestions(rawPinyin, replaceSpec) {
   showTypingSuggestions(localList, { start: replaceSpec.start, end: currentEnd });
 
   if (googleQuery) {
-    const remoteList = await fetchGoogleChinesePinyinIme(googleQuery);
-    if (reqId !== imeSuggestRequestId || currentLang !== 'zh') return;
+    remoteImeDebounceTimer = setTimeout(async () => {
+      if (reqId !== imeSuggestRequestId || currentLang !== 'zh') return;
+      const remoteList = await fetchGoogleChinesePinyinIme(googleQuery);
+      if (reqId !== imeSuggestRequestId || currentLang !== 'zh') return;
 
-    if (remoteList.length > 0) {
-      const merged = [];
-      const ordered = hasExplicitTone ? [...localList, ...remoteList] : [...remoteList, ...localList];
-      for (const item of ordered) {
-        if (item && !merged.includes(item)) merged.push(item);
+      if (remoteList.length > 0) {
+        const merged = [];
+        const ordered = hasExplicitTone ? [...localList, ...remoteList] : [...remoteList, ...localList];
+        for (const item of ordered) {
+          if (item && !merged.includes(item)) merged.push(item);
+        }
+
+        if (replaceSpec.liveUpdateBox1 && merged[0] && document.activeElement === romanizedOutputBox) {
+          const nextBox1 = (replaceSpec.prefixSrc || '') + merged[0] + (replaceSpec.suffixSrc || '');
+          textOutputBox.value = nextBox1;
+          lastKnownBox1Text = nextBox1;
+          charCount.textContent = formatCharCountText(nextBox1.length);
+          const zhBuilt = buildChineseAlignedSegmentsAndBackdrop(nextBox1);
+          furiganaBackdrop.innerHTML = zhBuilt.backdropHtml;
+          currentEnd = (replaceSpec.prefixSrc || '').length + merged[0].length;
+          autoResizeBoxes();
+        }
+
+        showTypingSuggestions(merged.slice(0, 12), { start: replaceSpec.start, end: currentEnd });
       }
-
-      if (replaceSpec.liveUpdateBox1 && merged[0] && document.activeElement === romanizedOutputBox) {
-        const nextBox1 = (replaceSpec.prefixSrc || '') + merged[0] + (replaceSpec.suffixSrc || '');
-        textOutputBox.value = nextBox1;
-        lastKnownBox1Text = nextBox1;
-        charCount.textContent = formatCharCountText(nextBox1.length);
-        const zhBuilt = buildChineseAlignedSegmentsAndBackdrop(nextBox1);
-        furiganaBackdrop.innerHTML = zhBuilt.backdropHtml;
-        currentEnd = (replaceSpec.prefixSrc || '').length + merged[0].length;
-        autoResizeBoxes();
-      }
-
-      showTypingSuggestions(merged.slice(0, 12), { start: replaceSpec.start, end: currentEnd });
-    }
+    }, 220);
   }
 }
 
@@ -844,6 +853,8 @@ async function updateTypingSuggestions(text, explicitRange = null) {
     return;
   }
 
+  clearTimeout(remoteImeDebounceTimer);
+  remoteImeDebounceTimer = null;
   const reqId = ++imeSuggestRequestId;
   const raw = activeRange.raw;
   const isRomaji = /^[a-zA-Z'\s-]+$/.test(raw);
@@ -861,20 +872,26 @@ async function updateTypingSuggestions(text, explicitRange = null) {
   showTypingSuggestions(localList, { start: activeRange.start, end: activeRange.end });
 
   if (/^[\u3041-\u3096ー]+$/.test(hiraQuery)) {
-    const remoteList = await fetchGoogleJapaneseCgiIme(hiraQuery);
-    if (reqId !== imeSuggestRequestId) return;
-    if (remoteList.length > 0) {
-      const merged = [];
-      for (const item of [...remoteList, ...localList]) {
-        if (item && !merged.includes(item)) merged.push(item);
+    remoteImeDebounceTimer = setTimeout(async () => {
+      if (reqId !== imeSuggestRequestId || currentLang !== 'ja') return;
+      const remoteList = await fetchGoogleJapaneseCgiIme(hiraQuery);
+      if (reqId !== imeSuggestRequestId || currentLang !== 'ja') return;
+      if (remoteList.length > 0) {
+        const merged = [];
+        for (const item of [...remoteList, ...localList]) {
+          if (item && !merged.includes(item)) merged.push(item);
+        }
+        showTypingSuggestions(merged.slice(0, 10), { start: activeRange.start, end: activeRange.end });
       }
-      showTypingSuggestions(merged.slice(0, 10), { start: activeRange.start, end: activeRange.end });
-    }
+    }, 220);
   }
 }
 
 function applyImeSuggestion(suggestion, replaceRange) {
   if (!replaceRange) return;
+  clearTimeout(remoteImeDebounceTimer);
+  remoteImeDebounceTimer = null;
+  imeSuggestRequestId++;
   const wasBox2Focused = document.activeElement === romanizedOutputBox;
   const currentText = textOutputBox.value;
   const before = currentText.slice(0, replaceRange.start);
@@ -1455,14 +1472,14 @@ async function fetchHoverTranslation(sourceLang, rawText, targetLang) {
   const gtxResult = await fetchGoogleGtxPlainTranslation(sourceLang, cleanText, targetLang);
   if (gtxResult) {
     const payload = { translation: gtxResult, provider: 'Google' };
-    HOVER_TRANSLATION_CACHE.set(cacheKey, payload);
+    setBoundedCache(HOVER_TRANSLATION_CACHE, cacheKey, payload, 300);
     return payload;
   }
 
   const lingvaResult = await fetchLingvaTranslation(sourceLang, cleanText, targetLang);
   if (lingvaResult) {
     const payload = { translation: lingvaResult, provider: 'Lingva' };
-    HOVER_TRANSLATION_CACHE.set(cacheKey, payload);
+    setBoundedCache(HOVER_TRANSLATION_CACHE, cacheKey, payload, 300);
     return payload;
   }
 
@@ -1498,7 +1515,7 @@ async function buildLocalizedDictionaryData(tokenMeta) {
   if (!baseData) return null;
 
   if (targetLang === 'en') {
-    HYBRID_DICT_LANG_CACHE.set(cacheKey, baseData);
+    setBoundedCache(HYBRID_DICT_LANG_CACHE, cacheKey, baseData, 300);
     return baseData;
   }
 
@@ -1607,7 +1624,7 @@ async function buildLocalizedDictionaryData(tokenMeta) {
     charBreakdown: translatedBreakdowns
   };
 
-  HYBRID_DICT_LANG_CACHE.set(cacheKey, localizedResult);
+  setBoundedCache(HYBRID_DICT_LANG_CACHE, cacheKey, localizedResult, 300);
   return localizedResult;
 }
 
