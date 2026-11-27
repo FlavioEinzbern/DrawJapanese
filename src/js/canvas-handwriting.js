@@ -60,18 +60,22 @@ function resizeCanvas() {
 
 function redrawStrokes() {
   const rect = canvas.getBoundingClientRect();
+  const w = Math.max(rect.width, 1);
+  const h = Math.max(rect.height, 1);
   ctx.clearRect(0, 0, rect.width, rect.height);
   ctx.strokeStyle = getCanvasStrokeColor();
   
   for (const stroke of strokes) {
     if (stroke.x.length === 0) continue;
+    const x0 = stroke.x[0] * w;
+    const y0 = stroke.y[0] * h;
     ctx.beginPath();
-    ctx.moveTo(stroke.x[0], stroke.y[0]);
+    ctx.moveTo(x0, y0);
     if (stroke.x.length === 1) {
-      ctx.lineTo(stroke.x[0] + 0.01, stroke.y[0]);
+      ctx.lineTo(x0 + 0.01, y0);
     } else {
       for (let i = 1; i < stroke.x.length; i++) {
-        ctx.lineTo(stroke.x[i], stroke.y[i]);
+        ctx.lineTo(stroke.x[i] * w, stroke.y[i] * h);
       }
     }
     ctx.stroke();
@@ -80,10 +84,16 @@ function redrawStrokes() {
 
 function getCoords(e) {
   const rect = canvas.getBoundingClientRect();
+  const w = Math.max(rect.width, 1);
+  const h = Math.max(rect.height, 1);
   const point = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+  const x = point.clientX - rect.left;
+  const y = point.clientY - rect.top;
   return {
-    x: Math.round(point.clientX - rect.left),
-    y: Math.round(point.clientY - rect.top)
+    x,
+    y,
+    nx: x / w,
+    ny: y / h
   };
 }
 
@@ -96,8 +106,8 @@ function startDrawing(e) {
   strokeStartTime = Date.now();
   ctx.strokeStyle = getCanvasStrokeColor();
   
-  const { x, y } = getCoords(e);
-  currentStroke = { x: [x], y: [y], t: [0] };
+  const { x, y, nx, ny } = getCoords(e);
+  currentStroke = { x: [nx], y: [ny], t: [0] };
   
   ctx.beginPath();
   ctx.moveTo(x, y);
@@ -108,11 +118,11 @@ function startDrawing(e) {
 function draw(e) {
   if (!isDrawing) return;
   if (e && e.cancelable) e.preventDefault();
-  const { x, y } = getCoords(e);
+  const { x, y, nx, ny } = getCoords(e);
   const elapsed = Date.now() - strokeStartTime;
   
-  currentStroke.x.push(x);
-  currentStroke.y.push(y);
+  currentStroke.x.push(nx);
+  currentStroke.y.push(ny);
   currentStroke.t.push(elapsed);
   
   ctx.lineTo(x, y);
@@ -172,7 +182,7 @@ function initOfflineRecognizers() {
   }
 
   if (typeof HanziLookup !== 'undefined' && HanziLookup.init) {
-    const HANZI_CDN = 'https://cdn.jsdelivr.net/gh/gugray/HanziLookupJS@master/dist/';
+    const HANZI_CDN = 'https://cdn.jsdelivr.net/gh/gugray/HanziLookupJS@b21124f771ddd91f131e62aa478bc188f6ec78d3/dist/';
     if (!isHanziLookupOrigReady) {
       HanziLookup.init('orig', HANZI_CDN + 'orig.json', (ok) => {
         if (ok) isHanziLookupOrigReady = true;
@@ -186,18 +196,15 @@ function initOfflineRecognizers() {
   }
 }
 
-async function recognizeOfflineFallback(rect) {
+async function recognizeOfflineFallback() {
   if (strokes.length === 0) return [];
   const results = [];
 
-  const scaleX = 256 / Math.max(rect.width, 1);
-  const scaleY = 256 / Math.max(rect.height, 1);
-
   const normalizedStrokes256 = strokes
     .filter(s => s.x.length > 0)
-    .map(s => s.x.map((x, idx) => [
-      Math.round(x * scaleX),
-      Math.round(s.y[idx] * scaleY)
+    .map(s => s.x.map((nx, idx) => [
+      Math.round(nx * 256),
+      Math.round(s.y[idx] * 256)
     ]));
 
   if (typeof KanjiCanvas !== 'undefined' && KanjiCanvas.refPatterns) {
@@ -294,7 +301,13 @@ async function fetchHandwritingCandidates() {
 
   recognizingIndicator.classList.remove('hidden');
   const rect = canvas.getBoundingClientRect();
-  const inkPayload = strokes.map(s => [s.x, s.y, s.t]);
+  const w = Math.max(rect.width, 1);
+  const h = Math.max(rect.height, 1);
+  const inkPayload = strokes.map(s => [
+    s.x.map(nx => Math.round(nx * w)),
+    s.y.map(ny => Math.round(ny * h)),
+    s.t
+  ]);
   const apiLang = LANGUAGES[reqLang].apiLang;
   
   const payload = {
@@ -345,7 +358,7 @@ async function fetchHandwritingCandidates() {
     }
 
     if (reqId !== handwritingRequestId || strokes.length === 0 || reqLang !== currentLang) return;
-    const offlineCandidates = await recognizeOfflineFallback(rect);
+    const offlineCandidates = await recognizeOfflineFallback();
     if (reqId !== handwritingRequestId || strokes.length === 0 || reqLang !== currentLang) return;
     renderCandidates(offlineCandidates);
   } finally {
@@ -519,8 +532,12 @@ function insertCharacter(char) {
   const start = textOutputBox.selectionStart ?? textOutputBox.value.length;
   const end = textOutputBox.selectionEnd ?? textOutputBox.value.length;
   const originalText = textOutputBox.value;
+  const nextPos = start + char.length;
   
   textOutputBox.value = originalText.substring(0, start) + char + originalText.substring(end);
+  try {
+    textOutputBox.setSelectionRange(nextPos, nextPos);
+  } catch (_) {}
   textOutputBox.blur();
 
   updateRomanization(false);
