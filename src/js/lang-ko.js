@@ -85,8 +85,9 @@ function romanizeKorean(str) {
     } else if (next.cho === 'ㅎ') {
       const normJong = neutralizeCoda(curr.jong);
       if (['ㄷ', 'ㅈ', 'ㅊ', 'ㅌ'].includes(curr.jong)) {
+        const prevJong = curr.jong;
         curr.jong = '';
-        next.cho = curr.jong === 'ㄷ' || curr.jong === 'ㅌ' ? 'ㅌ' : 'ㅊ';
+        next.cho = (prevJong === 'ㄷ' || prevJong === 'ㅌ') ? 'ㅌ' : 'ㅊ';
         continue;
       } else if (normJong === 'ㄱ' || normJong === 'ㅂ') {
         curr.jong = normJong;
