@@ -23,6 +23,7 @@ let dictHoverHideTimer = null;
 let dictLookupRequestId = 0;
 let isDictAndHighlightInitialized = false;
 let currentConversionId = 0;
+let box2InputRequestId = 0;
 let lastEngineStatusType = 'loading';
 
 /* 3-Way Hover/Tap Translation Mode: 'on-unlocked' | 'on-locked' | 'off' (Starts OFF) */
@@ -704,6 +705,8 @@ function clearAlignedSegmentsAndSuggestions() {
 }
 
 async function handleBox2Input() {
+  const reqId = ++box2InputRequestId;
+  currentConversionId++;
   hideDictionaryPopover();
   const rawBox2 = romanizedOutputBox.value;
   const backdrop = getBox2Backdrop();
@@ -732,7 +735,8 @@ async function handleBox2Input() {
   charCount.textContent = formatCharCountText(newBox1Text.length);
 
   if (currentLang === 'ja') {
-    await renderBox1FuriganaOnly(newBox1Text);
+    await renderBox1FuriganaOnly(newBox1Text, () => reqId === box2InputRequestId && currentLang === 'ja');
+    if (reqId !== box2InputRequestId || currentLang !== 'ja') return;
     const trimmedMidRom = middleRomaji.trim();
     if (trimmedMidRom) {
       const replaceStart = prefixSrc.length;
@@ -2577,6 +2581,7 @@ async function updateRomanization(triggerSuggestions = false, forceSyncBox2 = fa
     hideDictionaryPopover();
   }
 
+  box2InputRequestId++;
   const conversionId = ++currentConversionId;
   charCount.textContent = formatCharCountText(text.length);
 
