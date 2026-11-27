@@ -628,45 +628,6 @@ const CC_CEDICT_CORE = {
   '为什么': { trad: '為什麼', py: 'wèi shén me', pos: 'Adverb', glosses: ['why?; for what reason?'] }
 };
 
-async function fetchFreeDictApiEntry(lang, word, timeoutMs = 2400) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(`https://freedictionaryapi.com/api/v1/entries/${lang}/${encodeURIComponent(word)}`, {
-      method: 'GET',
-      mode: 'cors',
-      credentials: 'omit',
-      signal: controller.signal
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (_) {
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function fetchGoogleGtxBilingualDict(sl, word, timeoutMs = 2400) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(sl)}&tl=en&dt=bd&dt=t&dj=1&q=${encodeURIComponent(word)}`;
-    const res = await fetch(url, {
-      method: 'GET',
-      mode: 'cors',
-      credentials: 'omit',
-      signal: controller.signal
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (_) {
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 async function lookupChineseSingleCharMeaning(ch) {
   if (CC_CEDICT_CORE[ch]) {
     return {
@@ -776,6 +737,6 @@ async function lookupChineseTokenDict(tokenMeta) {
     charBreakdown
   };
 
-  ZH_DICT_CACHE.set(cacheKey, result);
+  setBoundedCache(ZH_DICT_CACHE, cacheKey, result, 300);
   return result;
 }
