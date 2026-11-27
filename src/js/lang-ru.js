@@ -296,6 +296,6 @@ async function lookupRussianTokenDict(tokenMeta) {
     charBreakdown: []
   };
 
-  RU_DICT_CACHE.set(cacheKey, result);
+  setBoundedCache(RU_DICT_CACHE, cacheKey, result, 300);
   return result;
 }
