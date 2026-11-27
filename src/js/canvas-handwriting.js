@@ -7,6 +7,19 @@ let isDrawing = false;
 let strokeStartTime = 0;
 let recognizeTimeout = null;
 let isInitialCandidateHintDismissed = false;
+let handwritingRequestId = 0;
+let activeHandwritingAbortController = null;
+
+function cancelPendingHandwritingRecognition() {
+  handwritingRequestId++;
+  clearTimeout(recognizeTimeout);
+  recognizeTimeout = null;
+  if (activeHandwritingAbortController) {
+    activeHandwritingAbortController.abort();
+    activeHandwritingAbortController = null;
+  }
+  recognizingIndicator.classList.add('hidden');
+}
 
 function getCanvasStrokeColor() {
   return document.body.classList.contains('dark-mode') ? '#f8fafc' : '#1e1b4b';
@@ -67,19 +80,18 @@ function redrawStrokes() {
 
 function getCoords(e) {
   const rect = canvas.getBoundingClientRect();
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  const point = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
   return {
-    x: Math.round(clientX - rect.left),
-    y: Math.round(clientY - rect.top)
+    x: Math.round(point.clientX - rect.left),
+    y: Math.round(point.clientY - rect.top)
   };
 }
 
 function startDrawing(e) {
-  e.preventDefault();
+  if (e && e.cancelable) e.preventDefault();
   dismissInitialCandidateHint();
   hideCanvasRomanizationPopup();
-  clearTimeout(recognizeTimeout);
+  cancelPendingHandwritingRecognition();
   isDrawing = true;
   strokeStartTime = Date.now();
   ctx.strokeStyle = getCanvasStrokeColor();
@@ -95,7 +107,7 @@ function startDrawing(e) {
 
 function draw(e) {
   if (!isDrawing) return;
-  e.preventDefault();
+  if (e && e.cancelable) e.preventDefault();
   const { x, y } = getCoords(e);
   const elapsed = Date.now() - strokeStartTime;
   
@@ -109,7 +121,7 @@ function draw(e) {
 
 function stopDrawing(e) {
   if (!isDrawing) return;
-  e.preventDefault();
+  if (e && e.cancelable) e.preventDefault();
   isDrawing = false;
   
   if (currentStroke.x.length > 0) {
@@ -123,7 +135,7 @@ function stopDrawing(e) {
 function clearCanvas() {
   strokes = [];
   currentStroke = { x: [], y: [], t: [] };
-  clearTimeout(recognizeTimeout);
+  cancelPendingHandwritingRecognition();
   const rect = canvas.getBoundingClientRect();
   ctx.clearRect(0, 0, rect.width, rect.height);
   renderCandidates([]);
@@ -133,7 +145,7 @@ function undoLastStroke() {
   if (strokes.length > 0) {
     strokes.pop();
     redrawStrokes();
-    clearTimeout(recognizeTimeout);
+    cancelPendingHandwritingRecognition();
     if (strokes.length > 0) {
       recognizeTimeout = setTimeout(fetchHandwritingCandidates, 300);
     } else {
@@ -234,9 +246,17 @@ async function recognizeOfflineFallback(rect) {
   return results.slice(0, 10);
 }
 
-async function postHandwritingWithTimeout(url, bodyString, timeoutMs = 3500) {
+async function postHandwritingWithTimeout(url, bodyString, timeoutMs = 3500, externalSignal = null) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const onExternalAbort = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      clearTimeout(timer);
+      throw new DOMException('Aborted', 'AbortError');
+    }
+    externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+  }
   try {
     const response = await fetch(url, {
       method: "POST",
@@ -255,16 +275,27 @@ async function postHandwritingWithTimeout(url, bodyString, timeoutMs = 3500) {
     throw new Error("Invalid handwriting response payload");
   } finally {
     clearTimeout(timer);
+    if (externalSignal) {
+      externalSignal.removeEventListener('abort', onExternalAbort);
+    }
   }
 }
 
 async function fetchHandwritingCandidates() {
   if (strokes.length === 0) return;
-  
+
+  if (activeHandwritingAbortController) {
+    activeHandwritingAbortController.abort();
+  }
+  const reqId = ++handwritingRequestId;
+  const reqAbortController = new AbortController();
+  activeHandwritingAbortController = reqAbortController;
+  const reqLang = currentLang;
+
   recognizingIndicator.classList.remove('hidden');
   const rect = canvas.getBoundingClientRect();
   const inkPayload = strokes.map(s => [s.x, s.y, s.t]);
-  const apiLang = LANGUAGES[currentLang].apiLang;
+  const apiLang = LANGUAGES[reqLang].apiLang;
   
   const payload = {
     app_version: 0.4,
@@ -299,21 +330,31 @@ async function fetchHandwritingCandidates() {
 
   try {
     for (const endpoint of endpoints) {
+      if (reqId !== handwritingRequestId || strokes.length === 0 || reqLang !== currentLang) return;
       try {
-        const candidates = await postHandwritingWithTimeout(endpoint, bodyString, 3500);
+        const candidates = await postHandwritingWithTimeout(endpoint, bodyString, 3500, reqAbortController.signal);
+        if (reqId !== handwritingRequestId || strokes.length === 0 || reqLang !== currentLang) return;
         if (candidates && candidates.length > 0) {
           renderCandidates(candidates);
           return;
         }
       } catch (endpointErr) {
+        if (reqId !== handwritingRequestId) return;
         console.warn(`Endpoint failed (${endpoint}):`, endpointErr.message);
       }
     }
 
+    if (reqId !== handwritingRequestId || strokes.length === 0 || reqLang !== currentLang) return;
     const offlineCandidates = await recognizeOfflineFallback(rect);
+    if (reqId !== handwritingRequestId || strokes.length === 0 || reqLang !== currentLang) return;
     renderCandidates(offlineCandidates);
   } finally {
-    recognizingIndicator.classList.add('hidden');
+    if (activeHandwritingAbortController === reqAbortController) {
+      activeHandwritingAbortController = null;
+    }
+    if (reqId === handwritingRequestId) {
+      recognizingIndicator.classList.add('hidden');
+    }
   }
 }
 
@@ -405,8 +446,11 @@ function renderCandidates(candidates) {
     if (isInitialCandidateHintDismissed) {
       candidatesContainer.classList.add('hidden');
     } else {
+      const hintText = (typeof getAppStrings === 'function' && getAppStrings().canvas && getAppStrings().canvas.candidateHint)
+        ? getAppStrings().canvas.candidateHint
+        : 'Draw a character on the canvas above...';
       candidatesContainer.classList.remove('hidden');
-      candidatesContainer.innerHTML = '<span class="text-xs text-slate-400 italic px-3">Draw a character on the canvas above...</span>';
+      candidatesContainer.innerHTML = `<span class="text-xs text-slate-400 italic px-3">${escapeHtml(hintText)}</span>`;
     }
     return;
   }
