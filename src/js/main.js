@@ -150,6 +150,23 @@ const COLLAPSE_ICON_SVG = `
   </svg>
 `;
 
+function syncExpandedBoxWrapping() {
+  const isExpanded = document.body.classList.contains('canvas-expanded');
+  const wrapMode = isExpanded ? 'off' : 'soft';
+  textOutputBox.setAttribute('wrap', wrapMode);
+  romanizedOutputBox.setAttribute('wrap', wrapMode);
+
+  if (!isExpanded) {
+    textOutputBox.scrollLeft = 0;
+    furiganaBackdrop.scrollLeft = 0;
+    romanizedOutputBox.scrollLeft = 0;
+    const activeRomanizedBackdrop = document.getElementById('romanized-backdrop');
+    if (activeRomanizedBackdrop) {
+      activeRomanizedBackdrop.scrollLeft = 0;
+    }
+  }
+}
+
 function initCanvasFullscreenToggle() {
   const viewport = canvas.parentElement;
   if (!viewport || document.getElementById('btn-toggle-fullscreen')) return;
@@ -157,6 +174,7 @@ function initCanvasFullscreenToggle() {
   if (window.matchMedia('(orientation: portrait)').matches) {
     document.body.classList.add('canvas-expanded');
   }
+  syncExpandedBoxWrapping();
 
   const isInitiallyExpanded = document.body.classList.contains('canvas-expanded');
   const canvasStrings = (typeof getAppStrings === 'function')
@@ -180,6 +198,7 @@ function initCanvasFullscreenToggle() {
 
     syncViewportHeight();
     const isExpanded = document.body.classList.toggle('canvas-expanded');
+    syncExpandedBoxWrapping();
     const cStrings = (typeof getAppStrings === 'function')
       ? getAppStrings().canvas
       : { expandCanvas: 'Expand canvas', collapseCanvas: 'Back to default view' };
@@ -211,6 +230,49 @@ window.addEventListener('mouseup', stopDrawing);
 canvas.addEventListener('touchstart', startDrawing, { passive: false });
 canvas.addEventListener('touchmove', draw, { passive: false });
 window.addEventListener('touchend', stopDrawing, { passive: false });
+window.addEventListener('touchcancel', stopDrawing, { passive: false });
+
+/* Sync scroll offsets between transparent textareas and their backdrops (especially in canvas-expanded mode) */
+textOutputBox.addEventListener('scroll', () => {
+  if (furiganaBackdrop.scrollLeft !== textOutputBox.scrollLeft) {
+    furiganaBackdrop.scrollLeft = textOutputBox.scrollLeft;
+  }
+  if (furiganaBackdrop.scrollTop !== textOutputBox.scrollTop) {
+    furiganaBackdrop.scrollTop = textOutputBox.scrollTop;
+  }
+});
+
+furiganaBackdrop.addEventListener('scroll', () => {
+  if (textOutputBox.scrollLeft !== furiganaBackdrop.scrollLeft) {
+    textOutputBox.scrollLeft = furiganaBackdrop.scrollLeft;
+  }
+  if (textOutputBox.scrollTop !== furiganaBackdrop.scrollTop) {
+    textOutputBox.scrollTop = furiganaBackdrop.scrollTop;
+  }
+});
+
+romanizedOutputBox.addEventListener('scroll', () => {
+  const activeRomanizedBackdrop = document.getElementById('romanized-backdrop');
+  if (!activeRomanizedBackdrop) return;
+  if (activeRomanizedBackdrop.scrollLeft !== romanizedOutputBox.scrollLeft) {
+    activeRomanizedBackdrop.scrollLeft = romanizedOutputBox.scrollLeft;
+  }
+  if (activeRomanizedBackdrop.scrollTop !== romanizedOutputBox.scrollTop) {
+    activeRomanizedBackdrop.scrollTop = romanizedOutputBox.scrollTop;
+  }
+});
+
+if (romanizedBackdrop) {
+  romanizedBackdrop.addEventListener('scroll', () => {
+    if (document.activeElement === romanizedOutputBox) return;
+    if (romanizedOutputBox.scrollLeft !== romanizedBackdrop.scrollLeft) {
+      romanizedOutputBox.scrollLeft = romanizedBackdrop.scrollLeft;
+    }
+    if (romanizedOutputBox.scrollTop !== romanizedBackdrop.scrollTop) {
+      romanizedOutputBox.scrollTop = romanizedBackdrop.scrollTop;
+    }
+  });
+}
 
 textOutputBox.addEventListener('focus', () => {
   syncBoxFocusState();
@@ -301,11 +363,15 @@ document.getElementById('btn-backspace').addEventListener('click', () => {
 
 document.getElementById('btn-clear-text').addEventListener('click', () => {
   textOutputBox.value = '';
+  textOutputBox.scrollLeft = 0;
   furiganaBackdrop.innerHTML = '';
+  furiganaBackdrop.scrollLeft = 0;
   romanizedOutputBox.value = '';
+  romanizedOutputBox.scrollLeft = 0;
   const activeRomanizedBackdrop = document.getElementById('romanized-backdrop');
   if (activeRomanizedBackdrop) {
     activeRomanizedBackdrop.innerHTML = '';
+    activeRomanizedBackdrop.scrollLeft = 0;
   }
   if (typeof clearAlignedSegmentsAndSuggestions === 'function') {
     clearAlignedSegmentsAndSuggestions();
@@ -319,11 +385,15 @@ document.getElementById('btn-clear-text').addEventListener('click', () => {
 /* ==========================================================================
    Clipboard Copy Feedback
    ========================================================================== */
+let toastHideTimer = null;
+
 function showToast(msg) {
+  clearTimeout(toastHideTimer);
   toastMessage.textContent = msg;
   toast.classList.remove('translate-y-12', 'opacity-0');
-  setTimeout(() => {
+  toastHideTimer = setTimeout(() => {
     toast.classList.add('translate-y-12', 'opacity-0');
+    toastHideTimer = null;
   }, 2000);
 }
 
