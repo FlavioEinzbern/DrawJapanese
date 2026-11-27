@@ -74,6 +74,15 @@ function initThemeToggle() {
   const themeBtn = document.getElementById('btn-theme-toggle');
   if (!themeBtn) return;
 
+  try {
+    const savedTheme = localStorage.getItem('appTheme');
+    if (savedTheme === 'light') {
+      document.body.classList.remove('dark-mode');
+    } else if (savedTheme === 'dark') {
+      document.body.classList.add('dark-mode');
+    }
+  } catch (_) {}
+
   const updateThemeButtonUI = () => {
     const isDark = document.body.classList.contains('dark-mode');
     const themeStrings = (typeof getAppStrings === 'function')
@@ -86,7 +95,10 @@ function initThemeToggle() {
   updateThemeButtonUI();
 
   themeBtn.addEventListener('click', () => {
-    document.body.classList.toggle('dark-mode');
+    const isDark = document.body.classList.toggle('dark-mode');
+    try {
+      localStorage.setItem('appTheme', isDark ? 'dark' : 'light');
+    } catch (_) {}
     updateThemeButtonUI();
     redrawStrokes();
   });
@@ -274,6 +286,8 @@ if (romanizedBackdrop) {
   });
 }
 
+let box1InputDebounceTimer = null;
+
 textOutputBox.addEventListener('focus', () => {
   syncBoxFocusState();
   if ((currentLang === 'ja' || currentLang === 'zh') && typeof updateTypingSuggestions === 'function') {
@@ -282,7 +296,11 @@ textOutputBox.addEventListener('focus', () => {
 });
 textOutputBox.addEventListener('blur', syncBoxFocusState);
 textOutputBox.addEventListener('input', () => {
-  updateRomanization(true, true);
+  clearTimeout(box1InputDebounceTimer);
+  box1InputDebounceTimer = setTimeout(() => {
+    box1InputDebounceTimer = null;
+    updateRomanization(true, true);
+  }, 50);
 });
 
 romanizedOutputBox.addEventListener('focus', () => {
@@ -334,6 +352,8 @@ tabs.forEach(tab => {
       gridGuide.className = 'absolute inset-0 cjk-grid pointer-events-none';
     }
 
+    clearTimeout(box1InputDebounceTimer);
+    box1InputDebounceTimer = null;
     if (typeof hideDictionaryPopover === 'function') {
       hideDictionaryPopover();
     }
@@ -362,6 +382,8 @@ document.getElementById('btn-backspace').addEventListener('click', () => {
 });
 
 document.getElementById('btn-clear-text').addEventListener('click', () => {
+  clearTimeout(box1InputDebounceTimer);
+  box1InputDebounceTimer = null;
   textOutputBox.value = '';
   textOutputBox.scrollLeft = 0;
   furiganaBackdrop.innerHTML = '';
