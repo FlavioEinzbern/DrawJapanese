@@ -78,7 +78,7 @@ const KANA_MAP = {
   'は':'ha','ひ':'hi','ふ':'fu','へ':'he','ほ':'ho',
   'ま':'ma','み':'mi','む':'mu','め':'me','も':'mo',
   'や':'ya','ゆ':'yu','よ':'yo',
-  'ら':'ra','り':'ri','る':'ru','れ':'れ','ろ':'ro',
+  'ら':'ra','り':'ri','る':'ru','れ':'re','ろ':'ro',
   'わ':'wa','ゐ':'wi','ゑ':'we','を':'wo','ん':'n',
   'が':'ga','ぎ':'gi','ぐ':'gu','げ':'ge','ご':'go',
   'ざ':'za','じ':'ji','ず':'zu','ぜ':'ze','ぞ':'zo',
@@ -159,7 +159,6 @@ const KANA_MAP = {
   'ァ':'a','ィ':'i','ゥ':'u','ェ':'e','ォ':'o','ャ':'ya','ュ':'yu','ョ':'yo','ヮ':'wa','ヵ':'ka','ヶ':'ke',
   'ー': '-'
 };
-KANA_MAP['れ'] = 're';
 
 // Irregular Japanese counters that Kuromoji splits when followed by particles like だけ / ほど / くらい
 const IRREGULAR_COUNTER_COMPOUNDS = {
