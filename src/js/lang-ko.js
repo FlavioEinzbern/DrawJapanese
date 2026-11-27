@@ -460,6 +460,6 @@ async function lookupKoreanTokenDict(tokenMeta) {
     charBreakdown
   };
 
-  KO_DICT_CACHE.set(cacheKey, result);
+  setBoundedCache(KO_DICT_CACHE, cacheKey, result, 300);
   return result;
 }
