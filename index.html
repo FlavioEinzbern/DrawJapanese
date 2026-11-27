@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Multilingual Handwriting & Romanizer</title>
 
-  <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Compiled Tailwind CSS -->
+  <link rel="stylesheet" href="src/css/tailwind.min.css" />
 
   <!-- Custom Styles -->
   <link rel="stylesheet" href="src/css/styles.css" />
@@ -18,12 +18,13 @@
   <!-- Chinese Pinyin Engine (pinyin-pro) -->
   <script src="https://cdn.jsdelivr.net/npm/pinyin-pro@3.19.6/dist/index.js"></script>
 
-  <!-- Offline CJK Handwriting Fallback Engines -->
-  <script src="https://cdn.jsdelivr.net/gh/asdfjkl/kanjicanvas@master/kanji-canvas.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/asdfjkl/kanjicanvas@master/ref-patterns.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/gugray/HanziLookupJS@master/dist/hanzilookup.min.js"></script>
+  <!-- Offline CJK Handwriting Fallback Engines (Pinned Commits) -->
+  <script src="https://cdn.jsdelivr.net/gh/asdfjkl/kanjicanvas@a9214105f156def3b96930e5fcf10b7652b7a1f7/kanji-canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/asdfjkl/kanjicanvas@a9214105f156def3b96930e5fcf10b7652b7a1f7/ref-patterns.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/gugray/HanziLookupJS@b21124f771ddd91f131e62aa478bc188f6ec78d3/dist/hanzilookup.min.js"></script>
 </head>
 <body class="dark-mode bg-slate-50 text-slate-800 min-h-screen flex flex-col selection:bg-indigo-100 selection:text-indigo-700 transition-colors duration-150">
+  <script>try{if(localStorage.getItem('appTheme')==='light')document.body.classList.remove('dark-mode');}catch(_){}</script>
 
   <!-- Top Navigation & Language Selector -->
   <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs transition-colors duration-150">
@@ -171,8 +172,9 @@
     </div>
   </div>
 
-  <!-- Application Scripts (4 Language Modules + Shared Coordinators) -->
+  <!-- Application Scripts (Shared Utils + 4 Language Modules + Shared Coordinators) -->
   <script src="src/js/config-dictionaries.js"></script>
+  <script src="src/js/utils.js"></script>
   <script src="src/js/lang-ja.js"></script>
   <script src="src/js/lang-zh.js"></script>
   <script src="src/js/lang-ko.js"></script>
